@@ -510,6 +510,7 @@ void Sort2() {
     p = p << 1ul;
     if (total_found == 1){
       char SIG_STOP_SEND='a';
+      //MPI_Send(&SIG_STOP_SEND,1,MPI_CHAR,0,5,MPI_COMM_WORLD);
       MPI_Send(&SIG_STOP_SEND,1,MPI_CHAR,0,5,MPI_COMM_WORLD);
       break;
     }
