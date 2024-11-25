@@ -460,6 +460,7 @@ void Sort2() {
     unsigned long sum = 0ul;
     for (unsigned long i = 0ul; i < single_int_count; i++) {
       sum+=FINAL_COUNTS[i];
+      printf("Worker %d:sum=%lu\n",WORLD_RANK,sum);
       if (sum == WINDOW_SIZE) {
         batch_found = 1;
         pivot = i;
@@ -504,11 +505,16 @@ void Sort2() {
         break;
       }
     }
+    printf("Worker %d:sum=%lu\n",WORLD_RANK,sum);
     total_found = (int) checkSingleTuples();
     p = p << 1ul;
-    if (total_found == 1)
+    if (total_found == 1){
+      char SIG_STOP_SEND='a';
+      MPI_Send(&SIG_STOP_SEND,1,MPI_CHAR,0,5,MPI_COMM_WORLD);
       break;
+    }
   }
+  printf("Worker %d Bye!",WORLD_RANK);
 }
 int main(int argc, char **argv) {
   struct timeval beginTime, endTime;
