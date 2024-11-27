@@ -503,7 +503,7 @@ void Sort2() {
         }
       }
       MPI_Send(&batch_count, 1, MPI_UNSIGNED_LONG, 0, 16, MPI_COMM_WORLD);
-      printf
+      printf("Send count to tap!\n");
       tuple *send_batch = (tuple *) malloc(sizeof(tuple) * batch_count);
       unsigned long k = 0ul;
       memset(send_batch, 0, sizeof(tuple) * batch_count);
