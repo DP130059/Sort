@@ -539,7 +539,7 @@ void Sort2() {
     }
     printf("Worker %d:after p=%lu\n", WORLD_RANK, p);
   }
-  printf("Worker %d Bye!", WORLD_RANK);
+  //printf("Worker %d Bye!", WORLD_RANK);
 }
 int main(int argc, char **argv) {
   struct timeval beginTime, endTime;
