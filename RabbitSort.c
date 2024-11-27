@@ -146,6 +146,10 @@ void tap() {
     //unsigned batch_recv_count = 0ul;
     for (unsigned long i = 1ul; i < WORLD_SIZE; i++) {
       if (finish[i - 1] == 0) {
+        int start_flag = 0;
+        while (start_flag == 0) {
+          MPI_Iprobe(i, 16, MPI_COMM_WORLD, &start_flag, &status);
+        }
         MPI_Recv(&recv_counts[i - 1], 1, MPI_UNSIGNED_LONG, i, 16, MPI_COMM_WORLD, &status);
         printf("Tap receives worker %lu's count %lu", i, recv_counts[i - 1]);
       }
@@ -352,7 +356,7 @@ void Sort2() {
   FILE *inputFile = fopen(inputFileAddr, "rb");
   fread(TUPLES, sizeof(tuple), TUPLE_SINGLE_COUNT, inputFile);
   fclose(inputFile);
-  int batch_found = 0, total_found = 0;
+  int total_found = 0, batch_found = 0;
   unsigned long p = P_MIN, total_keys_count = 0ul, single_int_count = 0ul, total_int_count = 0ul;
   unsigned long *KEYS = NULL, *COUNTS = NULL, *FINAL_COUNTS = NULL;
   unsigned long pivot_left = 0ul, pivot_right = 0ul, pivot = 0ul;
@@ -388,9 +392,10 @@ void Sort2() {
         single_max_key = recv_max_key;
     }
   }
-  pivot_left=single_min_key,pivot_right=single_min_key;
-  if(WORLD_RANK==1){
-    printf("Min key is %lu, max key is %lu\n",single_min_key,single_max_key);
+  pivot_left = single_min_key, pivot_right = single_min_key;
+  if (WORLD_RANK == 1) {
+    printf("Min key is %lu, max key is %lu\n", single_min_key, single_max_key);
+    printf("WINDOW_SIZE is %lu\n", WINDOW_SIZE);
   }
 
   while (1) {
@@ -406,7 +411,7 @@ void Sort2() {
     if (p == P_MIN) {
       Keys_Random(p, single_keys);
     } else {
-      Keys_Range(p,pivot_left,pivot_right,single_keys);
+      Keys_Range(p, pivot_left, pivot_right, single_keys);
     }
 
 
@@ -455,67 +460,86 @@ void Sort2() {
         FINAL_COUNTS[i] += COUNTS[single_int_count * j + i];
       }
     }
-    printf("Worker %d:p=%lu\n",WORLD_RANK,p);
+    printf("Worker %d:p=%lu\n", WORLD_RANK, p);
     //Control
     unsigned long sum = 0ul;
     for (unsigned long i = 0ul; i < single_int_count; i++) {
-      sum+=FINAL_COUNTS[i];
-      printf("Worker %d:sum=%lu\n",WORLD_RANK,sum);
+      sum += FINAL_COUNTS[i];
+      printf("Worker %d:sum=%lu\n", WORLD_RANK, sum);
       if (sum == WINDOW_SIZE) {
-        batch_found = 1;
         pivot = i;
-        //pivot_left=pivot_right;
-        if(i==single_int_count-1)
-          pivot_right=single_max_key;
-        else
-          pivot_right=KEYS[i];
-        unsigned long batch_count = 0ul;
-        for (unsigned long j = 0ul; j < TUPLE_SINGLE_COUNT; j++) {
-          if (TUPLES[j].key < pivot_right && TUPLES[j].key>= pivot_left) {
-            batch_count += 1ul;
-          }
-        }
-        MPI_Send(&batch_count, 1, MPI_UNSIGNED_LONG, 0, 16, MPI_COMM_WORLD);
-        tuple *send_batch = (tuple *) malloc(sizeof(tuple) * batch_count);
-        unsigned long k = 0ul;
-        memset(send_batch, 0, sizeof(tuple) * batch_count);
-        for (unsigned long j= 0ul; j < TUPLE_SINGLE_COUNT; j++) {
-          if (TUPLES[j].key < pivot_right && TUPLES[j].key>= pivot_left) {
-            check_tuples[j] = 1;
-            memcpy(send_batch + k, TUPLES + j, sizeof(tuple));
-          }
-        }
-        MPI_Send(send_batch, batch_count * sizeof(tuple), MPI_CHAR, 0, 44, MPI_COMM_WORLD);
-        free(send_batch);
-        send_batch = NULL;
-        pivot_left=pivot_right+1ul;
-        unsigned long check_sum=0ul;
-        for(unsigned long j=pivot+1ul;j<single_int_count;j++){
-          check_sum+=FINAL_COUNTS[j];
-          if(check_sum>WINDOW_SIZE){
-            if(j!=single_int_count+1)
-              pivot_right=KEYS[j];
-            else
-              pivot_right=single_max_key;
-          }
-        }
+        batch_found = 1;
         break;
       } else if (sum > WINDOW_SIZE) {
-        batch_found = 0;
+        if (i == 0) {
+          if (KEYS[i] == single_min_key) {
+            batch_found = 1;
+            pivot = i;
+          }
+        } else {
+          if (KEYS[i] == KEYS[i - 1]) {
+            pivot = i;
+            batch_found = 1;
+          } else {
+            batch_found = 0;
+            if (i == single_int_count - 1ul) {
+              pivot_right = single_max_key;
+            } else
+              pivot_right = KEYS[i];
+          }
+        }
         break;
       }
     }
-    printf("Worker %d:sum=%lu\n",WORLD_RANK,sum);
+    if (batch_found == 1) {
+      if (pivot == single_int_count - 1ul)
+        pivot_right = single_max_key;
+      else
+        pivot_right = KEYS[pivot];
+      unsigned long batch_count = 0ul;
+      for (unsigned long j = 0ul; j < TUPLE_SINGLE_COUNT; j++) {
+        if (TUPLES[j].key < pivot_right && TUPLES[j].key >= pivot_left) {
+          batch_count += 1ul;
+        }
+      }
+      MPI_Send(&batch_count, 1, MPI_UNSIGNED_LONG, 0, 16, MPI_COMM_WORLD);
+      tuple *send_batch = (tuple *) malloc(sizeof(tuple) * batch_count);
+      unsigned long k = 0ul;
+      memset(send_batch, 0, sizeof(tuple) * batch_count);
+      for (unsigned long j = 0ul; j < TUPLE_SINGLE_COUNT; j++) {
+        if (TUPLES[j].key < pivot_right && TUPLES[j].key >= pivot_left) {
+          check_tuples[j] = 1;
+          memcpy(send_batch + k, TUPLES + j, sizeof(tuple));
+        }
+      }
+      MPI_Send(send_batch, batch_count * sizeof(tuple), MPI_CHAR, 0, 44, MPI_COMM_WORLD);
+      free(send_batch);
+      send_batch = NULL;
+      pivot_left = pivot_right + 1ul;
+      unsigned long check_sum = 0ul;
+      for (unsigned long j = pivot + 1ul; j < single_int_count; j++) {
+        check_sum += FINAL_COUNTS[j];
+        if (check_sum > WINDOW_SIZE) {
+          if (j != single_int_count - 1ul)
+            pivot_right = KEYS[j];
+          else
+            pivot_right = single_max_key;
+        }
+      }
+      batch_found = 0;
+    }
+    //printf("WORKER FLUSH\n");
+    //printf("Worker %d: inner cycle ends!\n",WORLD_RANK);
     total_found = (int) checkSingleTuples();
     p = p << 1ul;
-    if (total_found == 1){
-      char SIG_STOP_SEND='a';
-      //MPI_Send(&SIG_STOP_SEND,1,MPI_CHAR,0,5,MPI_COMM_WORLD);
-      MPI_Send(&SIG_STOP_SEND,1,MPI_CHAR,0,5,MPI_COMM_WORLD);
+    if (total_found == 0) {
+      char SIG_STOP_SEND = 'a';
+      MPI_Send(&SIG_STOP_SEND, 1, MPI_CHAR, 0, 5, MPI_COMM_WORLD);
       break;
     }
+    printf("Worker %d:after p=%lu\n", WORLD_RANK, p);
   }
-  printf("Worker %d Bye!",WORLD_RANK);
+  printf("Worker %d Bye!", WORLD_RANK);
 }
 int main(int argc, char **argv) {
   struct timeval beginTime, endTime;
