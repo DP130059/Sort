@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <time.h>
 #include <memory.h>
 #include <mpi.h>
 #include <limits.h>
@@ -32,6 +33,9 @@ char checkSingleTuples() {
   return 0;
 }
 unsigned long randomUnsignedLong() {
+  struct timespec time1={0,0};
+  clock_gettime(CLOCK_REALTIME,&time1);
+  srand(time1.tv_nsec);
   //srand((unsigned) time(NULL));
   int res[2];
   memset(&res, 0, sizeof(int) * 2);
@@ -131,7 +135,8 @@ void Keys_Random(unsigned long p, unsigned long *single_keys) {
 void Keys_Range(unsigned long p, unsigned long pivot_left, unsigned long pivot_right, unsigned long *single_keys) {
   unsigned long pivot_int = pivot_right - pivot_left + 1ul;
   for (unsigned long i = 0ul; i < p; i++) {
-    single_keys[i] = (randomUnsignedLong() % pivot_int) + pivot_left;
+    unsigned long tmp=randomUnsignedLong()% pivot_int;
+    single_keys[i] = tmp + pivot_left;
   }
 }
 
@@ -394,7 +399,7 @@ void Sort2() {
   }
   pivot_left = single_min_key, pivot_right = single_min_key;
   if (WORLD_RANK == 1) {
-    printf("Min key is %lu, max key is %lu\n", single_min_key, single_max_key);
+    printf("Min key is 0x%lx, max key is 0x%lx\n", single_min_key, single_max_key);
     printf("WINDOW_SIZE is %lu\n", WINDOW_SIZE);
   }
 
@@ -460,12 +465,20 @@ void Sort2() {
         FINAL_COUNTS[i] += COUNTS[single_int_count * j + i];
       }
     }
-    printf("Worker %d:p=%lu\n", WORLD_RANK, p);
+   // printf("Worker %d:p=%lu\n", WORLD_RANK, p);
     //Control
+
+    if(WORLD_RANK==1){
+      printf("p=%lu\tpivot=%lu\tpivot_left=0x%lx\tpivot_right=0x%lx",p,pivot,pivot_left,pivot_right);
+      /*for(unsigned long i=0ul;i<total_keys_count;i++){
+        printf("KEYS[%lu]=%lx\t",i,KEYS[i]);
+      }*/
+      printf("\n");
+    }
     unsigned long sum = 0ul;
     for (unsigned long i = 0ul; i < single_int_count; i++) {
       sum += FINAL_COUNTS[i];
-      printf("Worker %d:sum=%lu\n", WORLD_RANK, sum);
+      //printf("Worker %d:sum=%lu\n", WORLD_RANK, sum);
       if (sum == WINDOW_SIZE) {
         pivot = i;
         batch_found = 1;
@@ -475,6 +488,13 @@ void Sort2() {
           if (KEYS[i] == single_min_key) {
             batch_found = 1;
             pivot = i;
+          }else {
+            batch_found = 0;
+            if (i == single_int_count - 1ul) {
+              pivot_right = single_max_key;
+            } else{
+              pivot_right = KEYS[i];
+            }
           }
         } else {
           if (KEYS[i] == KEYS[i - 1]) {
@@ -484,8 +504,9 @@ void Sort2() {
             batch_found = 0;
             if (i == single_int_count - 1ul) {
               pivot_right = single_max_key;
-            } else
+            } else{
               pivot_right = KEYS[i];
+            }
           }
         }
         break;
@@ -502,8 +523,8 @@ void Sort2() {
           batch_count += 1ul;
         }
       }
-      MPI_Send(&batch_count, 1, MPI_UNSIGNED_LONG, 0, 16, MPI_COMM_WORLD);
       printf("Send count to tap!\n");
+      MPI_Send(&batch_count, 1, MPI_UNSIGNED_LONG, 0, 16, MPI_COMM_WORLD);
       tuple *send_batch = (tuple *) malloc(sizeof(tuple) * batch_count);
       unsigned long k = 0ul;
       memset(send_batch, 0, sizeof(tuple) * batch_count);
@@ -534,13 +555,16 @@ void Sort2() {
     total_found = (int) checkSingleTuples();
     p = p << 1ul;
     if (total_found == 0) {
+      printf("Worker %d Bye!", WORLD_RANK);
       char SIG_STOP_SEND = 'a';
       MPI_Send(&SIG_STOP_SEND, 1, MPI_CHAR, 0, 5, MPI_COMM_WORLD);
       break;
     }
-    printf("Worker %d:after p=%lu\n", WORLD_RANK, p);
+    if(p == P_MAX){
+      break;
+    }
+    //printf("Worker %d:after p=%lu\n", WORLD_RANK, p);
   }
-  //printf("Worker %d Bye!", WORLD_RANK);
 }
 int main(int argc, char **argv) {
   struct timeval beginTime, endTime;
