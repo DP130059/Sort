@@ -24,7 +24,7 @@ char inputFileAddr[128] = "./Tuple", outputFileAddr[128] = "./SortedTuple";
 tuple *TUPLES = NULL;
 int WORLD_SIZE = 0, WORLD_RANK = 0, WORKER_SIZE = 0;
 
-char checkSingleTuples() {
+int checkSingleTuples() {
   for (unsigned long i = 0ul; i < TUPLE_SINGLE_COUNT; i++) {
     if (check_tuples[i] == 0) {
       return 1;
@@ -32,9 +32,19 @@ char checkSingleTuples() {
   }
   return 0;
 }
+
+unsigned long checkSingleTuples2() {
+  unsigned long res = 0ul;
+  for (unsigned long i = 0ul; i < TUPLE_SINGLE_COUNT; i++) {
+    if (check_tuples[i] == 1) {
+      res += 1ul;
+    }
+  }
+  return res;
+}
 unsigned long randomUnsignedLong() {
-  struct timespec time1={0,0};
-  clock_gettime(CLOCK_REALTIME,&time1);
+  struct timespec time1 = {0, 0};
+  clock_gettime(CLOCK_REALTIME, &time1);
   srand(time1.tv_nsec);
   //srand((unsigned) time(NULL));
   int res[2];
@@ -111,14 +121,15 @@ void init(int argc, char **argv) {
   char *endptr = NULL;
   DATA_SIZE = strtoul(argv[1], &endptr, 10);
   WINDOW_SIZE = strtoul(argv[2], &endptr, 10);
+  WINDOW_SIZE = 1ul << WINDOW_SIZE;
   //WINDOW_SIZE = (unsigned long) ((double) S * WINDOW_SIZE);
   strcat(inputFileAddr, argv[1]);
   strcat(outputFileAddr, argv[1]);
   MPI_Comm_rank(MPI_COMM_WORLD, &WORLD_RANK);
   MPI_Comm_size(MPI_COMM_WORLD, &WORLD_SIZE);
-  WORKER_SIZE = WORLD_SIZE - 1;
+  WORKER_SIZE = WORLD_SIZE - 1ul;
   TUPLE_SINGLE_COUNT = DATA_SIZE * GB;
-  TUPLE_TOTAL_COUNT = DATA_SIZE * GB * (WORLD_SIZE - 1ul);
+  TUPLE_TOTAL_COUNT = DATA_SIZE * GB * WORKER_SIZE;
   TUPLES = (tuple *) malloc(TUPLE_SINGLE_COUNT * sizeof(tuple));
   check_tuples = (char *) malloc(TUPLE_SINGLE_COUNT * sizeof(char));
   memset(check_tuples, 0, sizeof(char) * TUPLE_SINGLE_COUNT);
@@ -135,32 +146,37 @@ void Keys_Random(unsigned long p, unsigned long *single_keys) {
 void Keys_Range(unsigned long p, unsigned long pivot_left, unsigned long pivot_right, unsigned long *single_keys) {
   unsigned long pivot_int = pivot_right - pivot_left + 1ul;
   for (unsigned long i = 0ul; i < p; i++) {
-    unsigned long tmp=randomUnsignedLong()% pivot_int;
+    unsigned long tmp = randomUnsignedLong() % pivot_int;
     single_keys[i] = tmp + pivot_left;
   }
 }
 
 void tap() {
-  unsigned long recv_counts[WORLD_SIZE - 1ul];
+  unsigned long recv_counts[WORKER_SIZE];
+  memset(recv_counts, 0, sizeof(unsigned long) * WORKER_SIZE);
   tuple *recv_tuples = NULL;
-  int finish[WORLD_SIZE - 1ul];
-  memset(&finish, 0, sizeof(int) * (WORLD_SIZE - 1ul));
+  int finish[WORKER_SIZE];
+  memset(&finish, 0, sizeof(int) * (WORKER_SIZE));
   MPI_Status status;
   FILE *outputFile = fopen(outputFileAddr, "wb");
+  printf("Tap starts!\n");
   while (1) {
-    //unsigned batch_recv_count = 0ul;
-    for (unsigned long i = 1ul; i < WORLD_SIZE; i++) {
+    unsigned long batch_recv_count = 0ul;
+    for (int i = 1ul; i < WORLD_SIZE; i++) {
       if (finish[i - 1] == 0) {
         int start_flag = 0;
         while (start_flag == 0) {
           MPI_Iprobe(i, 16, MPI_COMM_WORLD, &start_flag, &status);
         }
+        printf("Worker %d start_flag=%d\n", i, start_flag);
         MPI_Recv(&recv_counts[i - 1], 1, MPI_UNSIGNED_LONG, i, 16, MPI_COMM_WORLD, &status);
-        printf("Tap receives worker %lu's count %lu", i, recv_counts[i - 1]);
+        printf("Tap receives worker %d's count %lu\n", i, recv_counts[i - 1]);
+        batch_recv_count += recv_counts[i - 1];
       }
     }
     unsigned long j = 0ul;
-    recv_tuples = (tuple *) malloc(sizeof(tuple) * WINDOW_SIZE);
+    recv_tuples = (tuple *) malloc(sizeof(tuple) * batch_recv_count);
+    memset(recv_tuples, 0, sizeof(tuple) * batch_recv_count);
     for (unsigned long i = 1ul; i < WORLD_SIZE; i++) {
       if (finish[i - 1] == 0) {
         if (recv_counts[i - 1] > 0) {
@@ -169,14 +185,15 @@ void tap() {
         }
       }
     }
+    printf("Tap receives %lu tuples in a batch!\n", batch_recv_count);
     int finish_all = 0;
     for (unsigned long i = 1ul; i < WORLD_SIZE; i++) {
       MPI_Iprobe(i, 5, MPI_COMM_WORLD, &finish[i - 1], &status);
       finish_all += finish[i - 1];
     }
-    fastSort(recv_tuples, 0ul, WINDOW_SIZE - 1ul);
-    fwrite(recv_tuples, sizeof(tuple), WINDOW_SIZE, outputFile);
-    if (finish_all == WORLD_SIZE - 1) {
+    fastSort(recv_tuples, 0ul, batch_recv_count - 1ul);
+    fwrite(recv_tuples, sizeof(tuple), batch_recv_count, outputFile);
+    if (finish_all == WORKER_SIZE) {
       free(recv_tuples);
       recv_tuples = NULL;
       fclose(outputFile);
@@ -401,9 +418,15 @@ void Sort2() {
   if (WORLD_RANK == 1) {
     printf("Min key is 0x%lx, max key is 0x%lx\n", single_min_key, single_max_key);
     printf("WINDOW_SIZE is %lu\n", WINDOW_SIZE);
+    printf("TUPLE_TOTAL_COUNT=%lu\n", TUPLE_TOTAL_COUNT);
+    printf("TUPLE_SINGLE_COUNT=%lu\n", TUPLE_SINGLE_COUNT);
   }
-
+  unsigned long batchi = 0ul;
   while (1) {
+    if (WORLD_RANK == 1) {
+      printf("Batchi=%lu\n", batchi);
+    }
+    batchi += 1ul;
     total_keys_count = WORKER_SIZE * p;
     single_int_count = total_keys_count + 1ul;
     total_int_count = single_int_count * WORKER_SIZE;
@@ -465,16 +488,10 @@ void Sort2() {
         FINAL_COUNTS[i] += COUNTS[single_int_count * j + i];
       }
     }
-   // printf("Worker %d:p=%lu\n", WORLD_RANK, p);
+    // printf("Worker %d:p=%lu\n", WORLD_RANK, p);
     //Control
 
-    if(WORLD_RANK==1){
-      printf("p=%lu\tpivot=%lu\tpivot_left=0x%lx\tpivot_right=0x%lx",p,pivot,pivot_left,pivot_right);
-      /*for(unsigned long i=0ul;i<total_keys_count;i++){
-        printf("KEYS[%lu]=%lx\t",i,KEYS[i]);
-      }*/
-      printf("\n");
-    }
+
     unsigned long sum = 0ul;
     for (unsigned long i = 0ul; i < single_int_count; i++) {
       sum += FINAL_COUNTS[i];
@@ -488,11 +505,11 @@ void Sort2() {
           if (KEYS[i] == single_min_key) {
             batch_found = 1;
             pivot = i;
-          }else {
+          } else {
             batch_found = 0;
             if (i == single_int_count - 1ul) {
               pivot_right = single_max_key;
-            } else{
+            } else {
               pivot_right = KEYS[i];
             }
           }
@@ -504,13 +521,22 @@ void Sort2() {
             batch_found = 0;
             if (i == single_int_count - 1ul) {
               pivot_right = single_max_key;
-            } else{
+            } else {
               pivot_right = KEYS[i];
             }
           }
         }
         break;
       }
+    }
+    if (WORLD_RANK == 1) {
+      printf("p=%lu\tpivot=%lu\tpivot_left=0x%lx\tpivot_right=0x%lx\tsum=%lu\tbatch_found=%d\n",
+             p,
+             pivot,
+             pivot_left,
+             pivot_right,
+             sum,
+             batch_found);
     }
     if (batch_found == 1) {
       if (pivot == single_int_count - 1ul)
@@ -519,7 +545,7 @@ void Sort2() {
         pivot_right = KEYS[pivot];
       unsigned long batch_count = 0ul;
       for (unsigned long j = 0ul; j < TUPLE_SINGLE_COUNT; j++) {
-        if (TUPLES[j].key < pivot_right && TUPLES[j].key >= pivot_left) {
+        if (TUPLES[j].key < pivot_right && TUPLES[j].key >= pivot_left && check_tuples[j] == 0) {
           batch_count += 1ul;
         }
       }
@@ -529,7 +555,7 @@ void Sort2() {
       unsigned long k = 0ul;
       memset(send_batch, 0, sizeof(tuple) * batch_count);
       for (unsigned long j = 0ul; j < TUPLE_SINGLE_COUNT; j++) {
-        if (TUPLES[j].key < pivot_right && TUPLES[j].key >= pivot_left) {
+        if (TUPLES[j].key < pivot_right && TUPLES[j].key >= pivot_left && check_tuples[j] == 0) {
           check_tuples[j] = 1;
           memcpy(send_batch + k, TUPLES + j, sizeof(tuple));
         }
@@ -549,10 +575,14 @@ void Sort2() {
         }
       }
       batch_found = 0;
+      p = 2ul;
     }
     //printf("WORKER FLUSH\n");
     //printf("Worker %d: inner cycle ends!\n",WORLD_RANK);
     total_found = (int) checkSingleTuples();
+    unsigned long utotal_found = checkSingleTuples2();
+    printf("Worker %d,Utotal_found=%lu\n", WORLD_RANK, utotal_found);
+    printf("Worker %d,Total_found=%d\n", WORLD_RANK, total_found);
     p = p << 1ul;
     if (total_found == 0) {
       printf("Worker %d Bye!", WORLD_RANK);
@@ -560,10 +590,6 @@ void Sort2() {
       MPI_Send(&SIG_STOP_SEND, 1, MPI_CHAR, 0, 5, MPI_COMM_WORLD);
       break;
     }
-    if(p == P_MAX){
-      break;
-    }
-    //printf("Worker %d:after p=%lu\n", WORLD_RANK, p);
   }
 }
 int main(int argc, char **argv) {
