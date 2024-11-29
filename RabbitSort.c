@@ -488,11 +488,10 @@ void Sort2() {
         FINAL_COUNTS[i] += COUNTS[single_int_count * j + i];
       }
     }
+
     // printf("Worker %d:p=%lu\n", WORLD_RANK, p);
     //Control
-
-
-    unsigned long sum = 0ul;
+     unsigned long sum = 0ul;
     for (unsigned long i = 0ul; i < single_int_count; i++) {
       sum += FINAL_COUNTS[i];
       //printf("Worker %d:sum=%lu\n", WORLD_RANK, sum);
