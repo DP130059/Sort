@@ -45,10 +45,10 @@ unsigned long randomUnsignedLong() {
   struct timespec time1 = {0, 0};
   clock_gettime(CLOCK_REALTIME, &time1);
   srand(time1.tv_nsec);
-  unsigned long i=(unsigned long )rand();
-  i=i<<32;
-  unsigned long j=(unsigned long )rand();
-  j=j|i;
+  unsigned long i = (unsigned long) rand();
+  i = i << 32;
+  unsigned long j = (unsigned long) rand();
+  j = j | i;
   return j;
 }
 
@@ -147,9 +147,6 @@ void Keys_Range(unsigned long p, unsigned long pivot_left, unsigned long pivot_r
   for (unsigned long i = 0ul; i < p; i++) {
     unsigned long tmp = randomUnsignedLong() % pivot_int;
     single_keys[i] = tmp + pivot_left;
-    if(WORLD_RANK==1&&p==2048){
-      printf("sk[%lu]=%lu\t\n",i,single_keys[i]);
-    }
   }
 }
 
@@ -196,7 +193,7 @@ void tap() {
     fastSort(recv_tuples, 0ul, batch_recv_count - 1ul);
     printf("Tap finished sorting!\n");
     fwrite(recv_tuples, sizeof(tuple), batch_recv_count, outputFile);
-    printf("Tap's finish_all is %d\n",finish_all);
+    printf("Tap's finish_all is %d\n", finish_all);
     if (finish_all == WORKER_SIZE) {
       free(recv_tuples);
       recv_tuples = NULL;
@@ -265,9 +262,7 @@ void Sort() {
     memset(COUNTS, 0, sizeof(unsigned long) * total_int_count);
     unsigned long *single_keys = KEYS + p * (WORLD_RANK - 1ul),
         *single_counts = COUNTS + single_int_count * (WORLD_RANK - 1ul);
-    if(WORLD_RANK==1){
-      printf("BatchP=%lu\n",batchi);
-    }
+
     if (p == P_MIN) {
       Keys_Random(p, single_keys);
     } else {
@@ -293,16 +288,26 @@ void Sort() {
     for (unsigned long i = 0ul; i < TUPLE_SINGLE_COUNT; i++) {
       if (check_tuples[i] == 0) {
         unsigned long index = find_range(KEYS, total_keys_count, TUPLES[i].key);
-        *(single_counts + index) += 1ul;
+        //*(single_counts + index) += 1ul;
+        single_counts[index]+=1ul;
       }
     }
-
-    //Exchange COUNTS
-    for (unsigned long i = 1ul; i <= WORKER_SIZE; i++) {
-      if (i != WORLD_RANK)
-        MPI_Send(single_counts, single_int_count, MPI_UNSIGNED_LONG, i, 24, MPI_COMM_WORLD);
+    if (WORLD_RANK == 1) {
+      printf("BatchP1=%lu\n", batchi);
     }
-    for (unsigned long i = 1ul; i <= WORKER_SIZE; i++) {
+    //Exchange COUNTS
+    for (int i = 1; i <= WORKER_SIZE; i++) {
+      printf("Worker %d,countsi=%d\n",WORLD_RANK,i);
+      if (i != WORLD_RANK){
+        MPI_Send(single_counts, single_int_count, MPI_UNSIGNED_LONG, i, 24, MPI_COMM_WORLD);
+        printf("Worker %d sends counts to Worker %d\n",WORLD_RANK,i);
+      }
+
+    }
+    if (WORLD_RANK == 1) {
+      printf("BatchP2=%lu\n", batchi);
+    }
+    for (int i = 1; i <= WORKER_SIZE; i++) {
       if (i != WORLD_RANK)
         MPI_Recv(COUNTS + single_int_count * (i - 1),
                  single_int_count,
@@ -311,6 +316,9 @@ void Sort() {
                  24,
                  MPI_COMM_WORLD,
                  &status);
+    }
+    if (WORLD_RANK == 1) {
+      printf("BatchP3=%lu\n", batchi);
     }
     //Collect COUNTS
     FINAL_COUNTS = (unsigned long *) malloc(sizeof(unsigned long) * single_int_count);
@@ -321,9 +329,10 @@ void Sort() {
       }
     }
 
+
     // printf("Worker %d:p=%lu\n", WORLD_RANK, p);
     //Control
-     unsigned long sum = 0ul;
+    unsigned long sum = 0ul;
     for (unsigned long i = 0ul; i < single_int_count; i++) {
       sum += FINAL_COUNTS[i];
       if (sum == WINDOW_SIZE) {
@@ -352,8 +361,8 @@ void Sort() {
           } else {
             batch_found = 0;
             if (i == single_int_count - 1ul) {
-              if(WORLD_RANK==1){
-                printf("sic=%lu\tKEYS[%lu]=%lu\tsum=%lu\n",single_int_count,i,KEYS[i],sum);
+              if (WORLD_RANK == 1) {
+                printf("sic=%lu\tKEYS[%lu]=%lu\tsum=%lu\n", single_int_count, i, KEYS[i], sum);
               }
               pivot_right = single_max_key;
             } else {
@@ -414,11 +423,16 @@ void Sort() {
     }
     total_found = (int) checkSingleTuples();
     unsigned long utotal_found = checkSingleTuples2();
-    if(WORLD_RANK==1){
+    if (WORLD_RANK == 1) {
       printf("Utotal_found=%lu\n", utotal_found);
       printf("Total_found=%d\n", total_found);
     }
-
+    free(KEYS);
+    free(COUNTS);
+    KEYS=NULL;
+    COUNTS=NULL;
+    free(FINAL_COUNTS);
+    FINAL_COUNTS=NULL;
     p = p << 1ul;
     if (total_found == 0) {
       printf("Worker %d Bye!", WORLD_RANK);
