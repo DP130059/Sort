@@ -1,4 +1,15 @@
-/Users/dp/Applications/CLion.app/Contents/bin/cmake/mac/aarch64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/Users/dp/Applications/CLion.app/Contents/bin/ninja/mac/aarch64/ninja -G Ninja -S /Users/dp/Documents/Projects/C/Sort/Newsort -B /Users/dp/Documents/Projects/C/Sort/Newsort/cmake-build-debug
--- Configuring done (0.0s)
--- Generating done (0.0s)
--- Build files have been written to: /Users/dp/Documents/Projects/C/Sort/Newsort/cmake-build-debug
+/home/gyp/.cache/JetBrains/RemoteDev/dist/a783d3db97df7_CLion-2023.3.6/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -G "CodeBlocks - Unix Makefiles" -S /home/gyp/Sort -B /home/gyp/Sort/cmake-build-debug
+CMake Deprecation Warning:
+  Support for "Extra Generators" like
+
+    CodeBlocks
+
+  is deprecated and will be removed from a future version of CMake.  IDEs may
+  use the cmake-file-api(7) to view CMake-generated project build trees.
+
+
+CMake Error at CMakeLists.txt:1 (cmake_minimum_required):
+  CMake 3.30 or higher is required.  You are running version 3.27.8
+
+
+-- Configuring incomplete, errors occurred!

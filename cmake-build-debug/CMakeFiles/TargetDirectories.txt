@@ -1,3 +1,0 @@
-/Users/dp/Documents/Projects/C/Sort/Newsort/cmake-build-debug/CMakeFiles/Newsort.dir
-/Users/dp/Documents/Projects/C/Sort/Newsort/cmake-build-debug/CMakeFiles/edit_cache.dir
-/Users/dp/Documents/Projects/C/Sort/Newsort/cmake-build-debug/CMakeFiles/rebuild_cache.dir
