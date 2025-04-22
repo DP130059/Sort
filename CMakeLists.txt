@@ -11,4 +11,5 @@ add_executable(Newsort
         TupleGen.c
         Check.c)
 
-include_directories(/opt/homebrew/Cellar/open-mpi/5.0.3_1/include)
+
+include_directories("/opt/homebrew/Cellar/open-mpi/5.0.7/include")
