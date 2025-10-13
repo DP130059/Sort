@@ -9,7 +9,8 @@ add_executable(Newsort
         BSort.c
         FastRamSort.c
         TupleGen.c
-        Check.c)
+        Check.c
+        Refresh.c)
 
 
 include_directories("/opt/homebrew/Cellar/open-mpi/5.0.7/include")
