@@ -119,7 +119,19 @@ void Keys_RangeB(uint64_t p_old, uint64_t range_floor, uint64_t range_ceiling, u
         single_keys[i] = randomRange(range_floor, range_ceiling);
     }
 }
+void tap(uint64_t range_floor,uint64_t range_ceiling,uint64_t tap_counts) {
+    tuple *sendBuf = (tuple *) malloc(tap_counts * sizeof(tuple));
+    uint64_t bufCount=0ul;
+    for (uint64_t i = 0; i<TUPLE_SINGLE_COUNT; i++) {
+        if (TUPLES[i].key>range_floor&&TUPLES[i].key<range_ceiling) {
+            memcpy(sendBuf+bufCount,&TUPLES[i],sizeof(tuple));
+            bufCount++;
+        }
+    }
+    MPI_Send(sendBuf,tap_counts*sizeof(tuple),MPI_CHAR,0,0,MPI_COMM_WORLD);
+    free(sendBuf);
 
+}
 void init(int argc, char **argv) {
     char *endptr = NULL;
     double tmp_window = (double) (WINDOW_SIZE);
@@ -267,6 +279,13 @@ void worker() {
                 sum = 0ul;
                 break;
             } else if (sum > WINDOW_SIZE_FLOOR) {
+                ORDERED_TUPLES+=sum;
+                tap(MIN_KEY,total_keys[i],sum);
+                init_flag=1;
+                sum=0ul;
+                break;
+            }else {
+                continue;
             }
         }
     }
