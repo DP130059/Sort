@@ -1,6 +1,7 @@
 #include<stdlib.h>
 #include<string.h>
 #include<stdio.h>
+#include<stdint.h>
 #include<mpi.h>
 #include<time.h>
 #include<sys/time.h>
@@ -14,6 +15,7 @@
 #define WINDOW_SIZE 1ul << 10ul
 #define GB 1ul << 24ul
 #define EPSILON 1.0E-5f
+
 
 typedef struct {
   uint64_t key;
@@ -128,6 +130,19 @@ void init(int argc, char **argv) {
   TUPLES = (tuple *) malloc(TUPLE_SINGLE_COUNT * sizeof(tuple));
   memset(TUPLES, 0, TUPLE_SINGLE_COUNT * sizeof(tuple));
 }
+unsigned long find_range(unsigned long *sorted_keys, unsigned long key_count, unsigned long key) {
+  unsigned long left = 0ul;
+  unsigned long right = key_count;
+  while (left < right) {
+    unsigned long mid = left + (right - left) / 2ul;
+    if (key <= sorted_keys[mid]) {
+      right = mid;
+    } else {
+      left = mid + 1ul;
+    }
+  }
+  return left;
+}
 void master() {
   tuple *WINDOW_BUF=(tuple *) malloc(WINDOW_SIZE_CEILING* sizeof(tuple));
 
@@ -173,6 +188,24 @@ void worker() {
       if (i!=WORLD_RANK-1) {
         MPI_Recv(total_keys+i*p,p,MPI_UINT64_T,i+1,44,MPI_COMM_WORLD,&keys_status);
       }else {
+        memcpy(total_keys+i*p,single_keys,p*sizeof(uint64_t));
+      }
+    }
+    qsort(total_keys,p*WORKER_SIZE,sizeof(uint64_t),compare_keys);
+    for (uint64_t i=0ul;i<TUPLE_SINGLE_COUNT;i++) {
+      uint64_t index=find_range(total_keys,p*WORKER_SIZE,TUPLES[i].key);
+      single_counts[index]++;
+    }
+    for (int i=0;i<WORKER_SIZE;i++) {
+      if (i!=WORLD_RANK-1) {
+        MPI_Send(single_counts,p+1,MPI_UINT64_T,i+1,16,MPI_COMM_WORLD);
+      }
+    }
+    for (int i=0;i<WORKER_SIZE;i++) {
+      if (i!=WORLD_RANK-1) {
+        MPI_Recv(total_counts+(p+1)*i,p+1,MPI_UINT64_T,i+1,16,MPI_COMM_WORLD,&conuts_status);
+      }else {
+        memcpy(total_counts+(p+1)*i,single_counts,(p+1)*sizeof(uint64_t));
       }
     }
   }

@@ -14,3 +14,4 @@ add_executable(Newsort
 
 
 include_directories("/opt/homebrew/Cellar/open-mpi/5.0.7/include")
+include_directories("C:\\Program Files (x86)\\Microsoft SDKs\\MPI\\Include")
