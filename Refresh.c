@@ -57,7 +57,6 @@ void swap2(tuple *t1, tuple *t2) {
     memcpy(t1->record, t2->record, sizeof(char) * REC_SIZE);
     memcpy(t2->record, &tmp.record, sizeof(char) * REC_SIZE);
 }
-
 void partition(tuple *BUF, unsigned long low, unsigned long high, unsigned long *piv) {
     unsigned long pivot = BUF[high].key;
     unsigned long i = low - 1;
@@ -119,8 +118,8 @@ void Keys_RangeB(uint64_t p_old, uint64_t range_floor, uint64_t range_ceiling, u
         single_keys[i] = randomRange(range_floor, range_ceiling);
     }
 }
-void tap(uint64_t range_floor,uint64_t range_ceiling,uint64_t tap_counts) {
-    tuple *sendBuf = (tuple *) malloc(tap_counts * sizeof(tuple));
+void tap(uint64_t range_floor,uint64_t range_ceiling,uint64_t *tap_counts) {
+    tuple *sendBuf = (tuple *) malloc(*tap_counts * sizeof(tuple));
     uint64_t bufCount=0ul;
     for (uint64_t i = 0; i<TUPLE_SINGLE_COUNT; i++) {
         if (TUPLES[i].key>range_floor&&TUPLES[i].key<range_ceiling) {
@@ -128,9 +127,13 @@ void tap(uint64_t range_floor,uint64_t range_ceiling,uint64_t tap_counts) {
             bufCount++;
         }
     }
-    MPI_Send(sendBuf,tap_counts*sizeof(tuple),MPI_CHAR,0,0,MPI_COMM_WORLD);
-    free(sendBuf);
 
+    MPI_Send(&bufCount,1,MPI_UINT64_T,0,77,MPI_COMM_WORLD);
+    if (bufCount!=0) {
+        MPI_Send(sendBuf,bufCount*sizeof(tuple),MPI_CHAR, 0,77,MPI_COMM_WORLD);
+    }
+    free(sendBuf);
+    sendBuf = NULL;
 }
 void init(int argc, char **argv) {
     char *endptr = NULL;
@@ -164,7 +167,32 @@ unsigned long find_range(unsigned long *sorted_keys, unsigned long key_count, un
 }
 
 void master() {
-    tuple *WINDOW_BUF = (tuple *) malloc(WINDOW_SIZE_CEILING * sizeof(tuple));
+    int startflag=0;
+    MPI_Status status;
+    while (startflag == 0) {
+        for (int i=1;i<=WORKER_SIZE;i++) {
+            MPI_Iprobe(i,77,MPI_COMM_WORLD,&startflag,&status);
+            if (startflag == 1) {
+                break;
+            }
+        }
+    }
+    uint64_t tuple_counts[WORKER_SIZE];
+    uint64_t sum_counts=0ul;
+    for (int i=1;i<=WORKER_SIZE;i++) {
+        MPI_Recv(&tuple_counts[i-1],1,MPI_UINT64_T,i,77,MPI_COMM_WORLD,&status);
+        sum_counts += tuple_counts[i-1];
+    }
+    tuple *recvBuf = (tuple *) malloc(sum_counts * sizeof(tuple));
+    memset(recvBuf, 0, sum_counts * sizeof(tuple));
+    tuple *Bufit=recvBuf;
+    for (int i=1;i<WORKER_SIZE;i++) {
+        MPI_Recv(Bufit,tuple_counts[i-1]*sizeof(tuple),MPI_CHAR,i,77,MPI_COMM_WORLD,&status);
+        Bufit += tuple_counts[i-1];
+    }
+    fastSort(recvBuf,0,sum_counts-1);
+    FILE* outputFile = fopen(outputFileAddr,"w");
+
 }
 
 void worker() {
@@ -280,7 +308,7 @@ void worker() {
                 break;
             } else if (sum > WINDOW_SIZE_FLOOR) {
                 ORDERED_TUPLES+=sum;
-                tap(MIN_KEY,total_keys[i],sum);
+                tap(MIN_KEY,total_keys[i],&sum);
                 init_flag=1;
                 sum=0ul;
                 break;
