@@ -28,7 +28,6 @@ uint8_t init_flag = 1;
 uint64_t WINDOW_SIZE_CEILING = 0ul, WINDOW_SIZE_FLOOR = 0ul;
 int32_t WORLD_RANK = 0, WORLD_SIZE = 0, WORKER_SIZE = 0;
 
-char *check_tuples = NULL;
 char inputFileAddr[128] = "./Tuple", outputFileAddr[128] = "./SortedTuple/";
 tuple *TUPLES = NULL;
 
@@ -254,8 +253,8 @@ void worker() {
   uint64_t MIN_KEY, MAX_KEY, p = P_MIN, near_batch = 0ul, sum = 0ul;
   uint64_t *single_keys = NULL, *total_keys = NULL, *single_counts = NULL, *total_counts = NULL, *sum_counts = NULL;
   MPI_Status minmax_status, keys_status, conuts_status;
-  MPI_Request min_req[(WORKER_SIZE - 1) * 2], max_req[(WORKER_SIZE - 1) * 2];
-  int min_key_it = 0, max_key_it = 0;
+  MPI_Request min_req[(WORKER_SIZE - 1) * 2], max_req[(WORKER_SIZE - 1) * 2],key_req[(WORKER_SIZE-1)*2];
+  int min_key_it = 0, max_key_it = 0,key_req_it=0;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
     if (TUPLES[i].key < MINS[WORLD_RANK - 1])
       MINS[WORLD_RANK - 1] = TUPLES[i].key;
@@ -285,7 +284,6 @@ void worker() {
       MAX_KEY = MAXS[i];
     }
   }
-
   while (ORDERED_TUPLES != TUPLE_SINGLE_COUNT) {
     if (init_flag == 1) {
       init_flag = 0;
@@ -316,16 +314,18 @@ void worker() {
     }
     for (int i = 0; i < WORKER_SIZE;) {
       if (i != WORLD_RANK - 1) {
-        MPI_Send(single_keys, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD);
+        MPI_Isend(single_keys, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD,&key_req[key_req_it++]);
       }
     }
     for (int i = 0; i < WORKER_SIZE; i++) {
       if (i != WORLD_RANK - 1) {
-        MPI_Recv(total_keys + i * p, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD, &keys_status);
+        MPI_Irecv(total_keys + i * p, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD, &key_req[key_req_it++]);
       } else {
         memcpy(total_keys + i * p, single_keys, p * sizeof(uint64_t));
       }
     }
+    MPI_Waitall((WORKER_SIZE-1) * 2, key_req,MPI_STATUS_IGNORE);
+    key_req_it = 0;
     qsort(total_keys, p * WORKER_SIZE, sizeof(uint64_t), compare_keys);
     for (uint64_t i = 0ul; i < TUPLE_SINGLE_COUNT; i++) {
       uint64_t index = find_range(total_keys, p * WORKER_SIZE, TUPLES[i].key);
@@ -333,22 +333,23 @@ void worker() {
     }
     for (int i = 0; i < WORKER_SIZE; i++) {
       if (i != WORLD_RANK - 1) {
-        MPI_Send(single_counts, (p + 1) * WORKER_SIZE,MPI_UINT64_T, i + 1, 16,MPI_COMM_WORLD);
+        MPI_Isend(single_counts, (p + 1) * WORKER_SIZE,MPI_UINT64_T, i + 1, 16,MPI_COMM_WORLD, &key_req[key_req_it++]);
       }
     }
     for (int i = 0; i < WORKER_SIZE; i++) {
       if (i != WORLD_RANK - 1) {
-        MPI_Recv(total_counts + (p + 1) * WORKER_SIZE * i,
+        MPI_Irecv(total_counts + (p + 1) * WORKER_SIZE * i,
                  p + 1,
                  MPI_UINT64_T,
                  i + 1,
                  16,
                  MPI_COMM_WORLD,
-                 &conuts_status);
+                 &key_req[key_req_it++]);
       } else {
         memcpy(total_counts + (p + 1) * WORKER_SIZE * i, single_counts, (p + 1) * sizeof(uint64_t));
       }
     }
+    MPI_Waitall((WORKER_SIZE - 1) * 2, key_req,MPI_STATUS_IGNORE);
     for (uint64_t i = 0ul; i < (p + 1ul) * WORKER_SIZE; i++) {
       for (int j = 0; j < WORKER_SIZE; j++) {
         sum_counts[i] += total_counts[j * WORKER_SIZE + i];
@@ -364,21 +365,37 @@ void worker() {
       } else if (sum > WINDOW_SIZE_FLOOR) {
         ORDERED_TUPLES += sum;
         tap(MIN_KEY, total_keys[i], &sum);
+        MIN_KEY = total_keys[i];
         init_flag = 1;
         sum = 0ul;
         break;
-      } else {
-        continue;
       }
     }
   }
-  sleep(10);
+
+  //Free Memory
+  free(single_keys);
+  free(total_keys);
+  free(single_counts);
+  free(total_counts);
+  free(sum_counts);
+  single_keys = NULL;
+  total_keys = NULL;
+  single_counts = NULL;
+  total_counts = NULL;
+  sum_counts = NULL;
 }
 
 int main(int argc, char **argv) {
+  MPI_Init(&argc, &argv);
   init(argc, argv);
   if (WORLD_RANK == 0) {
     master();
   } else {
+    worker();
   }
+  free(TUPLES);
+  TUPLES = NULL;
+  MPI_Finalize();
+  return 0;
 }
