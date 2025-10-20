@@ -198,39 +198,51 @@ unsigned long find_range(unsigned long *sorted_keys, unsigned long key_count, un
 }
 
 void master() {
-  uint64_t recv_count = 0ul;
-  uint64_t batch=0ul;
+  uint64_t recv_count = 0ul, batch = 0ul, sum_counts = 0ul;
   delete_files_in_dir(outputFileAddr);
+  MPI_Status recv_status;
+  int startflag = 0;
+  uint64_t tuple_counts[WORKER_SIZE];
+  tuple *recvBuf = NULL;
+  char batchOutputFileAddr[128], batchNumber[16];
   while (recv_count != TUPLE_TOTAL_COUNT) {
-    int startflag = 0;
-    MPI_Status status;
+    startflag = 0;
     while (startflag == 0) {
       for (int i = 1; i <= WORKER_SIZE; i++) {
-        MPI_Iprobe(i, 77,MPI_COMM_WORLD, &startflag, &status);
+        MPI_Iprobe(i, 77,MPI_COMM_WORLD, &startflag, &recv_status);
         if (startflag == 1) {
           break;
         }
       }
     }
-    startflag = 0;
-    uint64_t tuple_counts[WORKER_SIZE];
-    uint64_t sum_counts = 0ul;
+    memset(tuple_counts, 0, WORKER_SIZE*sizeof(uint64_t));
     for (int i = 1; i <= WORKER_SIZE; i++) {
-      MPI_Recv(&tuple_counts[i - 1], 1,MPI_UINT64_T, i, 77,MPI_COMM_WORLD, &status);
+      MPI_Recv(&tuple_counts[i - 1], 1,MPI_UINT64_T, i, 77,MPI_COMM_WORLD, &recv_status);
       sum_counts += tuple_counts[i - 1];
     }
-    tuple *recvBuf = (tuple *) malloc(sum_counts * sizeof(tuple));
+    recvBuf = (tuple *) malloc(sum_counts * sizeof(tuple));
     memset(recvBuf, 0, sum_counts * sizeof(tuple));
     tuple *Bufit = recvBuf;
     for (int i = 1; i < WORKER_SIZE; i++) {
-      MPI_Recv(Bufit, tuple_counts[i - 1] * sizeof(tuple),MPI_CHAR, i, 77,MPI_COMM_WORLD, &status);
+      MPI_Recv(Bufit, tuple_counts[i - 1] * sizeof(tuple),MPI_CHAR, i, 77,MPI_COMM_WORLD, &recv_status);
       Bufit += tuple_counts[i - 1];
     }
     fastSort(recvBuf, 0, sum_counts - 1);
-
-    FILE *outputFile = fopen(outputFileAddr, "w");
+    memset(batchNumber, 0, 16*sizeof(char));
+    memset(batchOutputFileAddr, 0, 128*sizeof(char));
+    snprintf(batchNumber, 16, "%llu", batch);
+    strcpy(batchOutputFileAddr, outputFileAddr);
+    strcat(batchOutputFileAddr, batchNumber);
+    batch += 1;
+    FILE *outputFile = fopen(batchOutputFileAddr, "w");
     fwrite(recvBuf, sizeof(tuple), sum_counts, outputFile);
+    fclose(outputFile);
+    free(recvBuf);
+    recvBuf = NULL;
+    sum_counts = 0ul;
   }
+  free(recvBuf);
+  recvBuf = NULL;
 }
 
 void worker() {
@@ -239,41 +251,42 @@ void worker() {
   fclose(inputFile);
   uint64_t MINS[WORKER_SIZE], MAXS[WORKER_SIZE];
   MINS[WORLD_RANK - 1] = UINT64_MAX, MAXS[WORLD_RANK - 1] = 0;
-  uint64_t MIN_KEY, MAX_KEY;
-  uint64_t *SINGLE_KEYS = (uint64_t *) malloc((P_MIN + 1) * sizeof(uint64_t) + 2);
+  uint64_t MIN_KEY, MAX_KEY, p = P_MIN, near_batch = 0ul, sum = 0ul;
+  uint64_t *single_keys = NULL, *total_keys = NULL, *single_counts = NULL, *total_counts = NULL, *sum_counts = NULL;
+  MPI_Status minmax_status, keys_status, conuts_status;
+  MPI_Request min_req[(WORKER_SIZE - 1) * 2], max_req[(WORKER_SIZE - 1) * 2];
+  int min_key_it = 0, max_key_it = 0;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
     if (TUPLES[i].key < MINS[WORLD_RANK - 1])
       MINS[WORLD_RANK - 1] = TUPLES[i].key;
     if (TUPLES[i].key > MAXS[WORLD_RANK - 1])
       MAXS[WORLD_RANK - 1] = TUPLES[i].key;
   }
+  //max_key_it=0,min_key_it=0;
+  for (int i = 0; i < WORKER_SIZE; i++) {
+    if (i != WORLD_RANK - 1) {
+      MPI_Isend(&MINS[WORLD_RANK - 1], 1,MPI_UINT64_T, i + 1, 81,MPI_COMM_WORLD, &min_req[min_key_it++]);
+      MPI_Isend(&MAXS[WORLD_RANK - 1], 1,MPI_UINT64_T, i + 1, 63,MPI_COMM_WORLD, &max_req[max_key_it++]);
+    }
+  }
+  for (int i = 0; i < WORKER_SIZE; i++) {
+    if (i != WORLD_RANK - 1) {
+      MPI_Irecv(MINS + i, 1,MPI_UINT64_T, i + 1, 81,MPI_COMM_WORLD, &min_req[min_key_it++]);
+      MPI_Irecv(MAXS + i, 1,MPI_UINT64_T, i + 1, 63,MPI_COMM_WORLD, &max_req[max_key_it++]);
+    }
+  }
+  MPI_Waitall((WORKER_SIZE - 1) * 2, min_req,MPI_STATUS_IGNORE);
+  MPI_Waitall((WORKER_SIZE - 1) * 2, max_req,MPI_STATUS_IGNORE);
+  for (int i = 0; i < WORKER_SIZE; i++) {
+    if (MIN_KEY > MINS[i]) {
+      MIN_KEY = MINS[i];
+    }
+    if (MAX_KEY < MAXS[i]) {
+      MAX_KEY = MAXS[i];
+    }
+  }
 
-  uint64_t p = P_MIN;
-  uint64_t *single_keys = NULL, *total_keys = NULL, *single_counts = NULL, *total_counts = NULL, *sum_counts = NULL;
-  uint64_t near_batch = 0ul, sum = 0ul;
-
-  MPI_Status minmax_status, keys_status, conuts_status;
   while (ORDERED_TUPLES != TUPLE_SINGLE_COUNT) {
-    for (int i = 0; i < WORKER_SIZE; i++) {
-      if (i != WORLD_RANK - 1) {
-        MPI_Send(&MINS[WORLD_RANK - 1], 1,MPI_UINT64_T, i + 1, 81,MPI_COMM_WORLD);
-        MPI_Send(&MAXS[WORLD_RANK - 1], 1,MPI_UINT64_T, i + 1, 63,MPI_COMM_WORLD);
-      }
-    }
-    for (int i = 0; i < WORKER_SIZE; i++) {
-      if (i != WORLD_RANK - 1) {
-        MPI_Recv(MINS + i, 1,MPI_UINT64_T, i + 1, 81,MPI_COMM_WORLD, &minmax_status);
-        MPI_Recv(MAXS + i, 1,MPI_UINT64_T, i + 1, 63,MPI_COMM_WORLD, &minmax_status);
-      }
-    }
-    for (int i = 0; i < WORKER_SIZE; i++) {
-      if (MIN_KEY > MINS[i]) {
-        MIN_KEY = MINS[i];
-      }
-      if (MAX_KEY < MAXS[i]) {
-        MAX_KEY = MAXS[i];
-      }
-    }
     if (init_flag == 1) {
       init_flag = 0;
       single_keys = (uint64_t *) malloc(p * sizeof(uint64_t));
