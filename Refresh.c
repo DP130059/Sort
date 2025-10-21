@@ -28,7 +28,7 @@ uint8_t init_flag = 1;
 uint64_t WINDOW_SIZE_CEILING = 0ul, WINDOW_SIZE_FLOOR = 0ul;
 int32_t WORLD_RANK = 0, WORLD_SIZE = 0, WORKER_SIZE = 0;
 
-char inputFileAddr[128] = "./Tuple", outputFileAddr[128] = "./SortedTuple/";
+char inputFileAddr[128] = "/mnt/data/Sort/gyp/Tuple", outputFileAddr[128] = "/mnt/data/Sort/gyp/SortedTuple/";
 tuple *TUPLES = NULL;
 
 void delete_files_in_dir(const char *path) {
