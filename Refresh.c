@@ -149,8 +149,8 @@ void Keys_RangeB(uint64_t p_old, uint64_t range_floor, uint64_t range_ceiling, u
     single_keys[i] = randomRange(range_floor, range_ceiling);
   }
 }
-void tap(uint64_t range_floor, uint64_t range_ceiling, uint64_t *tap_counts) {
-  tuple *sendBuf = (tuple *) malloc(*tap_counts * sizeof(tuple));
+void tap(uint64_t range_floor, uint64_t range_ceiling, uint64_t tap_counts) {
+  tuple *sendBuf = (tuple *)malloc(tap_counts*sizeof(tuple));
   uint64_t bufCount = 0ul;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
     if (TUPLES[i].key > range_floor && TUPLES[i].key < range_ceiling) {
@@ -364,7 +364,7 @@ void worker() {
         break;
       } else if (sum > WINDOW_SIZE_FLOOR) {
         ORDERED_TUPLES += sum;
-        tap(MIN_KEY, total_keys[i], &sum);
+        tap(MIN_KEY, total_keys[i], sum);
         MIN_KEY = total_keys[i];
         init_flag = 1;
         sum = 0ul;
