@@ -238,6 +238,7 @@ void master() {
     fclose(outputFile);
     free(recvBuf);
     recvBuf = NULL;
+    recv_count+=sum_counts;
     sum_counts = 0ul;
   }
   free(recvBuf);
@@ -250,9 +251,8 @@ void worker() {
   fclose(inputFile);
   uint64_t MINS[WORKER_SIZE], MAXS[WORKER_SIZE];
   MINS[WORLD_RANK - 1] = UINT64_MAX, MAXS[WORLD_RANK - 1] = 0;
-  uint64_t MIN_KEY, MAX_KEY, p = P_MIN, near_batch = 0ul, sum = 0ul;
+  uint64_t MIN_KEY=UINT64_MAX, MAX_KEY=0ul, p = P_MIN, near_batch = 0ul, sum = 0ul;
   uint64_t *single_keys = NULL, *total_keys = NULL, *single_counts = NULL, *total_counts = NULL, *sum_counts = NULL;
-  MPI_Status minmax_status, keys_status, conuts_status;
   MPI_Request min_req[(WORKER_SIZE - 1) * 2], max_req[(WORKER_SIZE - 1) * 2],key_req[(WORKER_SIZE-1)*2];
   int min_key_it = 0, max_key_it = 0,key_req_it=0;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
@@ -312,7 +312,7 @@ void worker() {
       Keys_RangeA(p / 2, MIN_KEY, near_batch, single_keys);
       Keys_RangeB(p / 2, near_batch, MAX_KEY, single_keys + (p / 2));
     }
-    for (int i = 0; i < WORKER_SIZE;) {
+    for (int i = 0; i < WORKER_SIZE;i++) {
       if (i != WORLD_RANK - 1) {
         MPI_Isend(single_keys, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD,&key_req[key_req_it++]);
       }
@@ -372,7 +372,6 @@ void worker() {
       }
     }
   }
-
   //Free Memory
   free(single_keys);
   free(total_keys);
