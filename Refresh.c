@@ -223,8 +223,11 @@ void master() {
     memset(recvBuf, 0, sum_counts * sizeof(tuple));
     tuple *Bufit = recvBuf;
     for (int i = 1; i < WORKER_SIZE; i++) {
-      MPI_Recv(Bufit, tuple_counts[i - 1] * sizeof(tuple),MPI_CHAR, i, 77,MPI_COMM_WORLD, &recv_status);
-      Bufit += tuple_counts[i - 1];
+      if (tuple_counts[i-1]!=0ul) {
+        MPI_Recv(Bufit, tuple_counts[i - 1] * sizeof(tuple),MPI_CHAR, i, 77,MPI_COMM_WORLD, &recv_status);
+        Bufit += tuple_counts[i - 1];
+      }
+
     }
     fastSort(recvBuf, 0, sum_counts - 1);
     memset(batchNumber, 0, 16*sizeof(char));
