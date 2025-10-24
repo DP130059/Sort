@@ -287,6 +287,7 @@ void worker() {
       MAX_KEY = MAXS[i];
     }
   }
+  printf("WORKER %d found min and max keys!\n",WORLD_RANK-1);
   while (ORDERED_TUPLES != TUPLE_SINGLE_COUNT) {
     if (init_flag == 1) {
       init_flag = 0;
@@ -315,6 +316,7 @@ void worker() {
       Keys_RangeA(p / 2, MIN_KEY, near_batch, single_keys);
       Keys_RangeB(p / 2, near_batch, MAX_KEY, single_keys + (p / 2));
     }
+    printf("worker %d Found Single Keys!\n",WORLD_RANK-1);
     for (int i = 0; i < WORKER_SIZE;i++) {
       if (i != WORLD_RANK - 1) {
         MPI_Isend(single_keys, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD,&key_req[key_req_it++]);
