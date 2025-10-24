@@ -178,7 +178,7 @@ void init(int argc, char **argv) {
   WORKER_SIZE = WORLD_SIZE - 1;
   TUPLE_SINGLE_COUNT = DATA_SIZE * GB;
   TUPLE_TOTAL_COUNT = DATA_SIZE * GB * WORKER_SIZE;
-  printf("WR is %d,WDS is %d,WSC is %ull,WSF is %ull\n",WORLD_RANK,WORLD_SIZE,WINDOW_SIZE_CEILING,WINDOW_SIZE_FLOOR);
+  printf("WR is %d,WDS is %d,WSC is %llu,WSF is %llu\n",WORLD_RANK,WORLD_SIZE,WINDOW_SIZE_CEILING,WINDOW_SIZE_FLOOR);
 }
 
 unsigned long find_range(unsigned long *sorted_keys, unsigned long key_count, unsigned long key) {
