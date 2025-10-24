@@ -178,8 +178,7 @@ void init(int argc, char **argv) {
   WORKER_SIZE = WORLD_SIZE - 1;
   TUPLE_SINGLE_COUNT = DATA_SIZE * GB;
   TUPLE_TOTAL_COUNT = DATA_SIZE * GB * WORKER_SIZE;
-  TUPLES = (tuple *) malloc(TUPLE_SINGLE_COUNT * sizeof(tuple));
-  memset(TUPLES, 0, TUPLE_SINGLE_COUNT * sizeof(tuple));
+  printf("WR is %d,WDS is %d,WSC is %ull,WSF is %ull\n",WORLD_RANK,WORLD_SIZE,WINDOW_SIZE_CEILING,WINDOW_SIZE_FLOOR);
 }
 
 unsigned long find_range(unsigned long *sorted_keys, unsigned long key_count, unsigned long key) {
@@ -287,7 +286,7 @@ void worker() {
       MAX_KEY = MAXS[i];
     }
   }
-  //printf("WORKER %d found min and max keys!\n",WORLD_RANK-1);
+  printf("WORKER %d found min and max keys!\n",WORLD_RANK-1);
   while (ORDERED_TUPLES != TUPLE_SINGLE_COUNT) {
     if (init_flag == 1) {
       init_flag = 0;
@@ -397,6 +396,8 @@ int main(int argc, char **argv) {
   if (WORLD_RANK == 0) {
     master();
   } else {
+    TUPLES = (tuple *) malloc(TUPLE_SINGLE_COUNT * sizeof(tuple));
+    memset(TUPLES, 0, TUPLE_SINGLE_COUNT * sizeof(tuple));
     worker();
   }
   free(TUPLES);
