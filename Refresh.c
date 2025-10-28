@@ -16,7 +16,7 @@
 #define P_MIN 2ul
 #define WINDOW_SIZE 1ul << 10ul
 #define GB 1ul << 24ul
-#define EPSILON 0.03
+#define EPSILON 0.1
 
 typedef struct {
   uint64_t key;
@@ -178,7 +178,7 @@ void init(int argc, char **argv) {
   WORKER_SIZE = WORLD_SIZE - 1;
   TUPLE_SINGLE_COUNT = DATA_SIZE * GB;
   TUPLE_TOTAL_COUNT = DATA_SIZE * GB * WORKER_SIZE;
-  printf("WR is %d,WDS is %d,WSC is %llu,WSF is %llu\n",WORLD_RANK,WORLD_SIZE,WINDOW_SIZE_CEILING,WINDOW_SIZE_FLOOR);
+  printf("WR is %d,WDS is %d,WSC is %lu,WSF is %lu\n",WORLD_RANK,WORLD_SIZE,WINDOW_SIZE_CEILING,WINDOW_SIZE_FLOOR);
 }
 
 unsigned long find_range(unsigned long *sorted_keys, unsigned long key_count, unsigned long key) {
@@ -231,7 +231,7 @@ void master() {
     fastSort(recvBuf, 0, sum_counts - 1);
     memset(batchNumber, 0, 16*sizeof(char));
     memset(batchOutputFileAddr, 0, 128*sizeof(char));
-    snprintf(batchNumber, 16, "%llu", batch);
+    snprintf(batchNumber, 16, "%lu", batch);
     strcpy(batchOutputFileAddr, outputFileAddr);
     strcat(batchOutputFileAddr, batchNumber);
     batch += 1;
