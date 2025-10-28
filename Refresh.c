@@ -287,36 +287,22 @@ void worker() {
     }
   }
   printf("WORKER %d found min %lx and max %lx!\n",WORLD_RANK-1,MIN_KEY,MAX_KEY);
-  single_keys = (uint64_t *) malloc(p * sizeof(uint64_t));
-  total_keys = (uint64_t *) malloc(p * WORKER_SIZE * sizeof(uint64_t));
-  single_counts = (uint64_t *) malloc((p + 1) * sizeof(uint64_t));
-  total_counts = (uint64_t *) malloc((p + 1) * WORKER_SIZE * WORKER_SIZE * sizeof(uint64_t));
-  sum_counts = (uint64_t *) malloc((p + 1) * WORKER_SIZE * sizeof(uint64_t));
-  memset(single_keys, 0, sizeof(uint64_t) * p);
-  memset(total_keys, 0, sizeof(uint64_t) * p * WORKER_SIZE);
-  memset(single_counts, 0, sizeof(uint64_t) * (p + 1) * WORKER_SIZE);
-  memset(total_counts, 0, sizeof(uint64_t) * (p + 1) * WORKER_SIZE * WORKER_SIZE);
-  memset(sum_counts, 0, sizeof(uint64_t) * (p + 1));
   while (ORDERED_TUPLES != TUPLE_SINGLE_COUNT) {
+    single_keys = (uint64_t *) realloc(single_keys, p * sizeof(uint64_t));
+    total_keys = (uint64_t *) realloc(total_keys, p * WORKER_SIZE * sizeof(uint64_t));
+    single_counts = (uint64_t *) realloc(single_counts, (p + 1) * sizeof(uint64_t));
+    total_counts = (uint64_t *) realloc(total_counts, (p + 1) * WORKER_SIZE * WORKER_SIZE * sizeof(uint64_t));
+    sum_counts = (uint64_t *) realloc(sum_counts, (p + 1) * WORKER_SIZE * sizeof(uint64_t));
+    memset(single_keys, 0, sizeof(uint64_t) * p);
+    memset(total_keys, 0, sizeof(uint64_t) * p * WORKER_SIZE);
+    memset(single_counts, 0, sizeof(uint64_t) * (p + 1) * WORKER_SIZE);
+    memset(total_counts, 0, sizeof(uint64_t) * (p + 1) * WORKER_SIZE * WORKER_SIZE);
+    memset(sum_counts, 0, sizeof(uint64_t) * (p + 1));
+    printf("WORKER %d,Here!",WORLD_RANK-1);
     if (init_flag == 1) {
       init_flag = 0;
-      single_keys = (uint64_t *) realloc(single_keys, p * sizeof(uint64_t));
-      total_keys = (uint64_t *) realloc(total_keys, p * WORKER_SIZE * sizeof(uint64_t));
-      single_counts = (uint64_t *) realloc(single_counts, (p + 1) * sizeof(uint64_t));
-      total_counts = (uint64_t *) realloc(total_counts, (p + 1) * WORKER_SIZE * WORKER_SIZE * sizeof(uint64_t));
-      sum_counts = (uint64_t *) realloc(sum_counts, (p + 1) * WORKER_SIZE * sizeof(uint64_t));
-      memset(single_keys, 0, sizeof(uint64_t) * p);
-      memset(total_keys, 0, sizeof(uint64_t) * p * WORKER_SIZE);
-      memset(single_counts, 0, sizeof(uint64_t) * (p + 1) * WORKER_SIZE);
-      memset(total_counts, 0, sizeof(uint64_t) * (p + 1) * WORKER_SIZE * WORKER_SIZE);
-      memset(sum_counts, 0, sizeof(uint64_t) * (p + 1));
       Keys_Random(p, single_keys);
     } else {
-      memset(single_keys, 0, sizeof(uint64_t) * p);
-      memset(total_keys, 0, sizeof(uint64_t) * p * WORKER_SIZE);
-      memset(single_counts, 0, sizeof(uint64_t) * (p + 1) * WORKER_SIZE);
-      memset(total_counts, 0, sizeof(uint64_t) * (p + 1) * WORKER_SIZE * WORKER_SIZE);
-      memset(sum_counts, 0, sizeof(uint64_t) * (p + 1));
       Keys_RangeA(p / 2, MIN_KEY, near_batch, single_keys);
       Keys_RangeB(p / 2, near_batch, MAX_KEY, single_keys + (p / 2));
     }
