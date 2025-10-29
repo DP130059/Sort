@@ -150,6 +150,7 @@ void Keys_RangeB(uint64_t p_old, uint64_t range_floor, uint64_t range_ceiling, u
   }
 }
 void tap(uint64_t range_floor, uint64_t range_ceiling, uint64_t tap_counts) {
+  MPI_Request count_request,tuple_request;
   tuple *sendBuf = (tuple *)malloc(tap_counts*sizeof(tuple));
   uint64_t bufCount = 0ul;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
@@ -158,11 +159,13 @@ void tap(uint64_t range_floor, uint64_t range_ceiling, uint64_t tap_counts) {
       bufCount++;
     }
   }
-
-  MPI_Send(&bufCount, 1,MPI_UINT64_T, 0, 77,MPI_COMM_WORLD);
+  MPI_Isend(&bufCount,1,MPI_UINT64_T,0,77,MPI_COMM_WORLD, &count_request);
+  //MPI_Send(&bufCount, 1,MPI_UINT64_T, 0, 77,MPI_COMM_WORLD);
+  MPI_Wait(count_request,MPI_STATUS_IGNORE);
   if (bufCount != 0) {
-    MPI_Send(sendBuf, bufCount * sizeof(tuple),MPI_CHAR, 0, 77,MPI_COMM_WORLD);
+    MPI_Isend(sendBuf,bufCount * sizeof(tuple),MPI_CHAR,0,77,MPI_COMM_WORLD, &tuple_request);
   }
+  MPI_Wait(tuple_request,MPI_STATUS_IGNORE);
   free(sendBuf);
   sendBuf = NULL;
 }
@@ -203,34 +206,37 @@ void master() {
   uint64_t tuple_counts[WORKER_SIZE];
   tuple *recvBuf = NULL;
   char batchOutputFileAddr[128], batchNumber[16];
+  MPI_Request count_requests[WORKER_SIZE];
+  int non_zero_worker_size=WORKER_SIZE;
   //printf("Master World Rank : %d \n", WORLD_RANK);
   while (recv_count != TUPLE_TOTAL_COUNT) {
-    startflag = 0;
-
-    while (startflag == 0) {
-      for (int i = 1; i <= WORKER_SIZE; i++) {
-        MPI_Iprobe(i, 77,MPI_COMM_WORLD, &startflag, &recv_status);
-        if (startflag == 1) {
-          break;
-        }
-      }
-    }
-    //printf("Master receives %lu tuples",)
+    sum_counts = 0ul;
+    non_zero_worker_size=WORKER_SIZE;
     memset(tuple_counts, 0, WORKER_SIZE*sizeof(uint64_t));
     for (int i = 1; i <= WORKER_SIZE; i++) {
-      MPI_Recv(&tuple_counts[i - 1], 1,MPI_UINT64_T, i, 77,MPI_COMM_WORLD, &recv_status);
-      sum_counts += tuple_counts[i - 1];
+      MPI_Irecv(&tuple_counts[i - 1], 1,MPI_UINT64_T, i, 77,MPI_COMM_WORLD,&count_requests[i-1]);
     }
+    MPI_Waitall(WORKER_SIZE,count_requests,MPI_STATUS_IGNORE);
+    for (int i=0; i < WORKER_SIZE; i++) {
+      printf("Master will receive %lu tuples from Worker %d\n",tuple_counts[i],i+1);
+      sum_counts += tuple_counts[i];
+      if (tuple_counts[i]==0) {
+        non_zero_worker_size-=1;
+      }
+    }
+    MPI_Request tuple_requests[non_zero_worker_size];
     recvBuf = (tuple *) malloc(sum_counts * sizeof(tuple));
     memset(recvBuf, 0, sum_counts * sizeof(tuple));
     tuple *Bufit = recvBuf;
+    int req_it=0;
     for (int i = 1; i < WORKER_SIZE; i++) {
       if (tuple_counts[i-1]!=0ul) {
-        MPI_Recv(Bufit, tuple_counts[i - 1] * sizeof(tuple),MPI_CHAR, i, 77,MPI_COMM_WORLD, &recv_status);
+        MPI_Irecv(Bufit, tuple_counts[i - 1] * sizeof(tuple),MPI_CHAR, i, 77,MPI_COMM_WORLD, &tuple_requests[req_it++]);
         Bufit += tuple_counts[i - 1];
       }
-
     }
+    MPI_Waitall(non_zero_worker_size,tuple_requests,MPI_STATUS_IGNORE);
+    printf("Master receives all tuple!\n");
     fastSort(recvBuf, 0, sum_counts - 1);
     memset(batchNumber, 0, 16*sizeof(char));
     memset(batchOutputFileAddr, 0, 128*sizeof(char));
