@@ -14,7 +14,8 @@
 #define KEY_SIZE 8ul
 #define REC_SIZE 56ul
 #define P_MIN 2ul
-#define WINDOW_SIZE 1ul << 10ul
+#define P_MAX 8ul
+#define WINDOW_SIZE 1ul << 14ul
 #define GB 1ul << 24ul
 #define EPSILON 0.1
 
@@ -150,22 +151,25 @@ void Keys_RangeB(uint64_t p_old, uint64_t range_floor, uint64_t range_ceiling, u
   }
 }
 void tap(uint64_t range_floor, uint64_t range_ceiling, uint64_t tap_counts) {
-  MPI_Request count_request,tuple_request;
-  tuple *sendBuf = (tuple *)malloc(tap_counts*sizeof(tuple));
+  printf("Worker %d will tap %lu tuples to Master!\n", WORLD_RANK - 1, tap_counts);
+  printf("Worker %d TRF is %lu,TRC is %lu!\n", WORLD_RANK - 1, range_floor, range_ceiling);
+  MPI_Request count_request, tuple_request;
+  tuple *sendBuf = (tuple *) malloc(tap_counts * sizeof(tuple));
   uint64_t bufCount = 0ul;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
     if (TUPLES[i].key > range_floor && TUPLES[i].key < range_ceiling) {
-      memcpy(sendBuf+bufCount, &TUPLES[i], sizeof(tuple));
+      //memcpy(sendBuf+bufCount, &TUPLES[i], sizeof(tuple));
       bufCount++;
     }
   }
-  MPI_Isend(&bufCount,1,MPI_UINT64_T,0,77,MPI_COMM_WORLD, &count_request);
+  printf("Worker %d has found %lu tuples in this range actually!\n", WORLD_RANK - 1, bufCount);
+  MPI_Isend(&bufCount, 1,MPI_UINT64_T, 0, 77,MPI_COMM_WORLD, &count_request);
   //MPI_Send(&bufCount, 1,MPI_UINT64_T, 0, 77,MPI_COMM_WORLD);
-  MPI_Wait(count_request,MPI_STATUS_IGNORE);
+  MPI_Wait(&count_request,MPI_STATUS_IGNORE);
   if (bufCount != 0) {
-    MPI_Isend(sendBuf,bufCount * sizeof(tuple),MPI_CHAR,0,77,MPI_COMM_WORLD, &tuple_request);
+    MPI_Isend(sendBuf, bufCount * sizeof(tuple),MPI_CHAR, 0, 77,MPI_COMM_WORLD, &tuple_request);
   }
-  MPI_Wait(tuple_request,MPI_STATUS_IGNORE);
+  MPI_Wait(&tuple_request,MPI_STATUS_IGNORE);
   free(sendBuf);
   sendBuf = NULL;
 }
@@ -181,7 +185,7 @@ void init(int argc, char **argv) {
   WORKER_SIZE = WORLD_SIZE - 1;
   TUPLE_SINGLE_COUNT = DATA_SIZE * GB;
   TUPLE_TOTAL_COUNT = DATA_SIZE * GB * WORKER_SIZE;
-  printf("WR is %d,WDS is %d,WSC is %lu,WSF is %lu\n",WORLD_RANK,WORLD_SIZE,WINDOW_SIZE_CEILING,WINDOW_SIZE_FLOOR);
+  printf("WR is %d,WDS is %d,WSC is %lu,WSF is %lu\n", WORLD_RANK, WORLD_SIZE, WINDOW_SIZE_CEILING, WINDOW_SIZE_FLOOR);
 }
 
 unsigned long find_range(unsigned long *sorted_keys, unsigned long key_count, unsigned long key) {
@@ -207,35 +211,35 @@ void master() {
   tuple *recvBuf = NULL;
   char batchOutputFileAddr[128], batchNumber[16];
   MPI_Request count_requests[WORKER_SIZE];
-  int non_zero_worker_size=WORKER_SIZE;
+  int non_zero_worker_size = WORKER_SIZE;
   //printf("Master World Rank : %d \n", WORLD_RANK);
   while (recv_count != TUPLE_TOTAL_COUNT) {
     sum_counts = 0ul;
-    non_zero_worker_size=WORKER_SIZE;
+    non_zero_worker_size = WORKER_SIZE;
     memset(tuple_counts, 0, WORKER_SIZE*sizeof(uint64_t));
     for (int i = 1; i <= WORKER_SIZE; i++) {
-      MPI_Irecv(&tuple_counts[i - 1], 1,MPI_UINT64_T, i, 77,MPI_COMM_WORLD,&count_requests[i-1]);
+      MPI_Irecv(&tuple_counts[i - 1], 1,MPI_UINT64_T, i, 77,MPI_COMM_WORLD, &count_requests[i - 1]);
     }
-    MPI_Waitall(WORKER_SIZE,count_requests,MPI_STATUS_IGNORE);
-    for (int i=0; i < WORKER_SIZE; i++) {
-      printf("Master will receive %lu tuples from Worker %d\n",tuple_counts[i],i+1);
+    MPI_Waitall(WORKER_SIZE, count_requests,MPI_STATUS_IGNORE);
+    for (int i = 0; i < WORKER_SIZE; i++) {
+      printf("Master will receive %lu tuples from Worker %d\n", tuple_counts[i], i + 1);
       sum_counts += tuple_counts[i];
-      if (tuple_counts[i]==0) {
-        non_zero_worker_size-=1;
+      if (tuple_counts[i] == 0) {
+        non_zero_worker_size -= 1;
       }
     }
     MPI_Request tuple_requests[non_zero_worker_size];
     recvBuf = (tuple *) malloc(sum_counts * sizeof(tuple));
     memset(recvBuf, 0, sum_counts * sizeof(tuple));
     tuple *Bufit = recvBuf;
-    int req_it=0;
+    int req_it = 0;
     for (int i = 1; i < WORKER_SIZE; i++) {
-      if (tuple_counts[i-1]!=0ul) {
+      if (tuple_counts[i - 1] != 0ul) {
         MPI_Irecv(Bufit, tuple_counts[i - 1] * sizeof(tuple),MPI_CHAR, i, 77,MPI_COMM_WORLD, &tuple_requests[req_it++]);
         Bufit += tuple_counts[i - 1];
       }
     }
-    MPI_Waitall(non_zero_worker_size,tuple_requests,MPI_STATUS_IGNORE);
+    MPI_Waitall(non_zero_worker_size, tuple_requests,MPI_STATUS_IGNORE);
     printf("Master receives all tuple!\n");
     fastSort(recvBuf, 0, sum_counts - 1);
     memset(batchNumber, 0, 16*sizeof(char));
@@ -249,7 +253,7 @@ void master() {
     fclose(outputFile);
     free(recvBuf);
     recvBuf = NULL;
-    recv_count+=sum_counts;
+    recv_count += sum_counts;
     sum_counts = 0ul;
   }
   free(recvBuf);
@@ -262,10 +266,10 @@ void worker() {
   fclose(inputFile);
   uint64_t MINS[WORKER_SIZE], MAXS[WORKER_SIZE];
   MINS[WORLD_RANK - 1] = UINT64_MAX, MAXS[WORLD_RANK - 1] = 0;
-  uint64_t MIN_KEY=UINT64_MAX, MAX_KEY=0ul, p = P_MIN, near_batch = 0ul, sum = 0ul;
+  uint64_t MIN_KEY = UINT64_MAX, MAX_KEY = 0ul, p = P_MIN, near_batch = 0ul, sum = 0ul;
   uint64_t *single_keys = NULL, *total_keys = NULL, *single_counts = NULL, *total_counts = NULL, *sum_counts = NULL;
-  MPI_Request min_req[(WORKER_SIZE - 1) * 2], max_req[(WORKER_SIZE - 1) * 2],key_req[(WORKER_SIZE-1)*2];
-  int min_key_it = 0, max_key_it = 0,key_req_it=0;
+  MPI_Request min_req[(WORKER_SIZE - 1) * 2], max_req[(WORKER_SIZE - 1) * 2], key_req[(WORKER_SIZE - 1) * 2];
+  int min_key_it = 0, max_key_it = 0, key_req_it = 0;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
     if (TUPLES[i].key < MINS[WORLD_RANK - 1])
       MINS[WORLD_RANK - 1] = TUPLES[i].key;
@@ -295,24 +299,31 @@ void worker() {
       MAX_KEY = MAXS[i];
     }
   }
-  printf("WORKER %d found min %lx and max %lx!\n",WORLD_RANK-1,MIN_KEY,MAX_KEY);
+  //printf("WORKER %d found min %lx and max %lx!\n",WORLD_RANK-1,MIN_KEY,MAX_KEY);
 
-  uint64_t total_keys_size=p*WORKER_SIZE;
-  uint64_t single_counts_size=total_keys_size+1ul;
-  uint64_t total_counts_size=single_counts_size*WORKER_SIZE;
-  uint64_t sum_counts_size=single_counts_size;
+  uint64_t total_keys_size = p * WORKER_SIZE;
+  uint64_t single_counts_size = total_keys_size + 1ul;
+  uint64_t total_counts_size = single_counts_size * WORKER_SIZE;
+  uint64_t sum_counts_size = single_counts_size;
   single_keys = (uint64_t *) malloc(p * sizeof(uint64_t));
-  total_keys = (uint64_t *) malloc( total_keys_size * sizeof(uint64_t));
-  single_counts = (uint64_t *) malloc( single_counts_size*sizeof(uint64_t));
-  total_counts = (uint64_t *) malloc( total_counts_size* sizeof(uint64_t));
-  sum_counts = (uint64_t *) malloc( sum_counts_size * sizeof(uint64_t));
+  total_keys = (uint64_t *) malloc(total_keys_size * sizeof(uint64_t));
+  single_counts = (uint64_t *) malloc(single_counts_size * sizeof(uint64_t));
+  total_counts = (uint64_t *) malloc(total_counts_size * sizeof(uint64_t));
+  sum_counts = (uint64_t *) malloc(sum_counts_size * sizeof(uint64_t));
   while (ORDERED_TUPLES != TUPLE_TOTAL_COUNT) {
-    total_keys_size=p*WORKER_SIZE;
-    single_counts_size=total_keys_size+1ul;
-    total_counts_size=single_counts_size*WORKER_SIZE;
-    sum_counts_size=single_counts_size;
+    total_keys_size = p * WORKER_SIZE;
+    single_counts_size = total_keys_size + 1ul;
+    total_counts_size = single_counts_size * WORKER_SIZE;
+    sum_counts_size = single_counts_size;
     //printf("WORKER %d,Here6!\n",WORLD_RANK-1);
-    if (init_flag == 1) {
+    if (init_flag == 1 || p == P_MAX) {
+      if (p == P_MAX) {
+        single_keys = (uint64_t *) realloc(single_keys, p * sizeof(uint64_t));
+        total_keys = (uint64_t *) realloc(total_keys, total_keys_size * sizeof(uint64_t));
+        single_counts = (uint64_t *) realloc(single_counts, single_counts_size * sizeof(uint64_t));
+        total_counts = (uint64_t *) realloc(total_counts, total_counts_size * sizeof(uint64_t));
+        sum_counts = (uint64_t *) realloc(sum_counts, sum_counts_size * sizeof(uint64_t));
+      }
       init_flag = 0;
       memset(single_keys, 0, sizeof(uint64_t) * p);
       memset(total_keys, 0, sizeof(uint64_t) * total_keys_size);
@@ -324,8 +335,8 @@ void worker() {
     } else {
       single_keys = (uint64_t *) realloc(single_keys, p * sizeof(uint64_t));
       total_keys = (uint64_t *) realloc(total_keys, total_keys_size * sizeof(uint64_t));
-      single_counts = (uint64_t *) realloc(single_counts, single_counts_size*sizeof(uint64_t));
-      total_counts = (uint64_t *) realloc(total_counts, total_counts_size* sizeof(uint64_t));
+      single_counts = (uint64_t *) realloc(single_counts, single_counts_size * sizeof(uint64_t));
+      total_counts = (uint64_t *) realloc(total_counts, total_counts_size * sizeof(uint64_t));
       sum_counts = (uint64_t *) realloc(sum_counts, sum_counts_size * sizeof(uint64_t));
       memset(single_keys, 0, sizeof(uint64_t) * p);
       memset(total_keys, 0, sizeof(uint64_t) * total_keys_size);
@@ -334,29 +345,48 @@ void worker() {
       memset(sum_counts, 0, sizeof(uint64_t) * sum_counts_size);
       Keys_RangeA(p / 2, MIN_KEY, near_batch, single_keys);
       Keys_RangeB(p / 2, near_batch, MAX_KEY, single_keys + (p / 2));
-    }
-    fflush(stdout);
-    printf("worker %d Found Single Keys!\n",WORLD_RANK-1);
-    for (int i = 0; i < WORKER_SIZE;i++) {
-      if (i != WORLD_RANK - 1) {
-        MPI_Isend(single_keys, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD,&key_req[key_req_it++]);
+      if (WORLD_RANK == 1) {
+        for (uint64_t i = 0ul; i < p; i++) {
+          if (single_keys[i] == 0ul) {
+            printf("Random bad key,p is %lu,index is %lu!\n", p, i);
+          }
+        }
       }
     }
+    //fflush(stdout);
+
+    //printf("worker %d Found Single Keys!\n",WORLD_RANK-1);
+    //printf("Worker %d's single keys are:",WORLD_RANK-1);
+
+
+
+    for (int i = 0; i < WORKER_SIZE; i++) {
+      if (i != WORLD_RANK - 1) {
+        MPI_Isend(single_keys, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD, &key_req[key_req_it++]);
+      }
+    }
+    uint64_t total_keys_bias = (WORLD_RANK - 1) * p;
+    memcpy(total_keys+total_keys_bias, single_keys, p*sizeof(uint64_t));
     for (int i = 0; i < WORKER_SIZE; i++) {
       if (i != WORLD_RANK - 1) {
         MPI_Irecv(total_keys + i * p, p,MPI_UINT64_T, i + 1, 44,MPI_COMM_WORLD, &key_req[key_req_it++]);
-      } else {
-        memcpy(total_keys + i * p, single_keys, p * sizeof(uint64_t));
       }
     }
-    MPI_Waitall((WORKER_SIZE-1) * 2, key_req,MPI_STATUS_IGNORE);
+    MPI_Waitall((WORKER_SIZE - 1) * 2, key_req,MPI_STATUS_IGNORE);
     //fflush(stdout);
-    printf("worker %d Exchanged Keys!\n",WORLD_RANK-1);
+    //printf("worker %d Exchanged Keys!\n",WORLD_RANK-1);
     fflush(stdout);
     key_req_it = 0;
-    qsort(total_keys, p * WORKER_SIZE, sizeof(uint64_t), compare_keys);
+    qsort(total_keys, total_keys_size, sizeof(uint64_t), compare_keys);
+    if (WORLD_RANK==1) {
+      for (uint64_t i = 0ul; i < total_keys_size; i++) {
+        printf("%lu\t", total_keys[i]);
+      }
+      printf("\n");
+    }
+
     for (uint64_t i = 0ul; i < TUPLE_SINGLE_COUNT; i++) {
-      uint64_t index = find_range(total_keys, p * WORKER_SIZE, TUPLES[i].key);
+      uint64_t index = find_range(total_keys, total_keys_size, TUPLES[i].key);
       single_counts[index]++;
     }
     for (int i = 0; i < WORKER_SIZE; i++) {
@@ -367,12 +397,12 @@ void worker() {
     for (int i = 0; i < WORKER_SIZE; i++) {
       if (i != WORLD_RANK - 1) {
         MPI_Irecv(total_counts + single_counts_size * i,
-                 single_counts_size,
-                 MPI_UINT64_T,
-                 i + 1,
-                 16,
-                 MPI_COMM_WORLD,
-                 &key_req[key_req_it++]);
+                  single_counts_size,
+                  MPI_UINT64_T,
+                  i + 1,
+                  16,
+                  MPI_COMM_WORLD,
+                  &key_req[key_req_it++]);
       } else {
         memcpy(total_counts + single_counts_size * i, single_counts, single_counts_size * sizeof(uint64_t));
       }
@@ -387,14 +417,16 @@ void worker() {
     for (uint64_t i = 0ul; i < sum_counts_size; i++) {
       sum += sum_counts[i];
       if (sum > WINDOW_SIZE_CEILING) {
-        p = p * 2;
+        if (p != P_MAX) {
+          p = p * 2;
+        }
         near_batch = total_keys[i];
-        printf("WORKER %d,%luHere6! \n",WORLD_RANK-1,sum);
+        //printf("WORKER %d,%luHere6! \n", WORLD_RANK - 1, sum);
         sum = 0ul;
         break;
       } else if (sum > WINDOW_SIZE_FLOOR) {
         ORDERED_TUPLES += sum;
-        printf("WORKER %d,%luHere7! \n",WORLD_RANK-1,sum);
+        //printf("WORKER %d,%luHere7! \n", WORLD_RANK - 1, sum);
         tap(MIN_KEY, total_keys[i], sum);
         MIN_KEY = total_keys[i];
         init_flag = 1;
@@ -402,7 +434,7 @@ void worker() {
         break;
       }
     }
-    printf("WORKER %d,%luHere8! \n",WORLD_RANK-1,ORDERED_TUPLES);
+    printf("WORKER %d,%luHere8! \n", WORLD_RANK - 1, p);
   }
   //Free Memory
   free(single_keys);
