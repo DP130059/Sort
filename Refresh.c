@@ -16,18 +16,17 @@
 #define REC_SIZE 56ul
 #define GB 1ul << 24ul
 
-uint8_t init_flag = 1;
-uint64_t P_MIN = 0ul, P_MAX = 0ul, WINDOW_SIZE = 1ul, OUTPUT_SWITCH = 0ul, DATA_SIZE = 0ul, TUPLE_TOTAL_COUNT = 0ul,
-    TUPLE_SINGLE_COUNT = 0ul, ORDERED_TUPLES = 0ul, WINDOW_SIZE_CEILING = 0ul, WINDOW_SIZE_FLOOR = 0ul;
-int32_t WORLD_RANK = 0, WORLD_SIZE = 0, WORKER_SIZE = 0;
-double EPSILON = 0.2;
-
 typedef struct {
   uint64_t key;
   char record[REC_SIZE];
 } tuple;
 
-char inputFileAddr[128] = "/mnt/data/Sort/gyp/Tuple", outputFileAddr[128] = "/mnt/data/Sort/gyp/SortedTuple/";
+uint8_t init_flag = 1;
+uint64_t P_MIN = 0ul, P_MAX = 0ul, WINDOW_SIZE = 1ul, OUTPUT_SWITCH = 0ul, DATA_SIZE = 0ul, TUPLE_TOTAL_COUNT = 0ul,
+    TUPLE_SINGLE_COUNT = 0ul, ORDERED_TUPLES = 0ul, WINDOW_SIZE_CEILING = 0ul, WINDOW_SIZE_FLOOR = 0ul;
+int32_t WORLD_RANK = 0, WORLD_SIZE = 0, WORKER_SIZE = 0;
+double EPSILON = 0.2;
+char inputFileAddr[128], outputFileAddr[128];
 tuple *TUPLES = NULL;
 uint8_t *TUPLES_AVAILABLE = NULL;
 
@@ -47,11 +46,7 @@ void delete_files_in_dir(const char *path) {
 
     struct stat st;
     if (stat(full_path, &st) == 0 && S_ISREG(st.st_mode)) {
-      if (unlink(full_path) == 0) {
-        if (OUTPUT_SWITCH==1) {
-          printf("Deleted: %s\n", full_path);
-        }
-      } else {
+      if (unlink(full_path) != 0) {
         perror("unlink");
       }
     }
@@ -186,7 +181,7 @@ void parseConfig() {
   rewind(configFile);
   char *lineBuffer = (char *) malloc(fileSize + 1);
   size_t lineRead;
-  fread(lineBuffer, 1, fileSize, configFile);
+  int trash = fread(lineBuffer, 1, fileSize, configFile);
   fclose(configFile);
   lineBuffer[fileSize] = '\0';
   cJSON *configJson = cJSON_Parse(lineBuffer);
@@ -208,6 +203,10 @@ void parseConfig() {
   WINDOW_SIZE = (uint64_t) jws->valueint;
   cJSON *jeps = cJSON_GetObjectItem(configJson, "epsilon");
   EPSILON = (double) jeps->valuedouble;
+  char dataSizeStr[64];
+  sprintf(dataSizeStr, "%lu", DATA_SIZE);
+  strcat(inputFileAddr, dataSizeStr);
+  WINDOW_SIZE = 1ul << WINDOW_SIZE;
 }
 
 void init() {
@@ -219,7 +218,7 @@ void init() {
   MPI_Comm_size(MPI_COMM_WORLD, &WORLD_SIZE);
   WORKER_SIZE = WORLD_SIZE - 1;
   TUPLE_SINGLE_COUNT = DATA_SIZE * GB;
-  TUPLE_TOTAL_COUNT = DATA_SIZE * GB * WORKER_SIZE;
+  TUPLE_TOTAL_COUNT = TUPLE_SINGLE_COUNT * WORKER_SIZE;
   if (OUTPUT_SWITCH == 1) {
     printf("WR is %d,WDS is %d,WSC is %lu,WSF is %lu\n",
            WORLD_RANK,
@@ -260,7 +259,7 @@ void master() {
     }
     MPI_Waitall(WORKER_SIZE, count_requests,MPI_STATUS_IGNORE);
     for (int i = 0; i < WORKER_SIZE; i++) {
-      if (OUTPUT_SWITCH==1) {
+      if (OUTPUT_SWITCH == 1) {
         printf("Master will receive %lu tuples from Worker %d\n", tuple_counts[i], i + 1);
       }
       sum_counts += tuple_counts[i];
@@ -312,7 +311,7 @@ void master() {
 
 void worker() {
   FILE *inputFile = fopen(inputFileAddr, "r");
-  fread(TUPLES, sizeof(tuple), TUPLE_SINGLE_COUNT, inputFile);
+  int trash = fread(TUPLES, sizeof(tuple), TUPLE_SINGLE_COUNT, inputFile);
   fclose(inputFile);
   uint64_t MINS[WORKER_SIZE], MAXS[WORKER_SIZE];
   MINS[WORLD_RANK - 1] = UINT64_MAX, MAXS[WORLD_RANK - 1] = 0;
@@ -366,10 +365,22 @@ void worker() {
   total_counts = (uint64_t *) malloc(total_counts_size * sizeof(uint64_t));
   sum_counts = (uint64_t *) malloc(sum_counts_size * sizeof(uint64_t));
   uint64_t single_keys_bias = (WORLD_RANK - 1) * p;
+  if (OUTPUT_SWITCH == 1 && WORLD_RANK == 1) {
+    fflush(stdout);
+    printf("DATA_SIZE is 0x%lx\n", DATA_SIZE);
+    printf("TUPLE_SINGLE_COUNT is 0x%lx\n", TUPLE_SINGLE_COUNT);
+    printf("TUPLE_TOTAL_COUNT is 0x%lx\n", TUPLE_TOTAL_COUNT);
+  }
   while (ORDERED_TUPLES != TUPLE_TOTAL_COUNT) {
+    if (TUPLE_TOTAL_COUNT-ORDERED_TUPLES<WINDOW_SIZE_FLOOR) {
+      ORDERED_TUPLES=TUPLE_TOTAL_COUNT;
+      if (OUTPUT_SWITCH == 1&&WORLD_RANK==1)
+      tap(MIN_KEY,MAX_KEY,TUPLE_TOTAL_COUNT-ORDERED_TUPLES);
+      break;
+    }
     if (OUTPUT_SWITCH == 1 && WORLD_RANK == 1) {
       printf("\n\nP is %lu\n", p);
-      printf("UNORDERED_TUPLES is %lx\n",TUPLE_TOTAL_COUNT-ORDERED_TUPLES);
+      printf("ORDERED_TUPLES is 0x%lx\n", ORDERED_TUPLES);
     }
     total_keys_size = p * WORKER_SIZE;
     single_counts_size = total_keys_size + 1ul;
@@ -507,29 +518,28 @@ void worker() {
         printf("SUM is %lu!\n", sum);
       }*/
       if (sum > WINDOW_SIZE_CEILING) {
-        uint64_t old_sum = sum - sum_counts[i];
-        if (old_sum > WINDOW_SIZE_FLOOR) {
-          tap(MIN_KEY, total_keys[i - 1], old_sum);
-          MIN_KEY = total_keys[i - 1];
-          init_flag = 1;
-          sum = 0ul;
-          break;
-        } else {
-          if (p != P_MAX) {
-            p = p * 2;
-          }
-          near_batch = total_keys[i];
-          if (OUTPUT_SWITCH == 1 && WORLD_RANK == 1) {
-            printf("Near_batch is 0x%lx! \n", near_batch);
-          }
-          sum = 0ul;
-          break;
+        if (p != P_MAX) {
+          p = p * 2;
         }
+        near_batch = total_keys[i];
+        if (OUTPUT_SWITCH == 1 && WORLD_RANK == 1) {
+          printf("Near_batch is 0x%lx! \n", near_batch);
+        }
+        sum = 0ul;
+        break;
+      } else if (sum > WINDOW_SIZE_FLOOR) {
+        ORDERED_TUPLES += sum;
+        tap(MIN_KEY, total_keys[i], sum);
+        MIN_KEY = total_keys[i];
+        init_flag = 1;
+        sum = 0ul;
+        break;
       }
     }
     //printf("WORKER %d,%luHere8! \n", WORLD_RANK - 1, p);
   }
   //Free Memory
+  printf("BYE from Worker %d",WORLD_RANK-1);
   free(single_keys);
   free(total_keys);
   free(single_counts);
