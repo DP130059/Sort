@@ -149,7 +149,7 @@ void tap(uint64_t range_floor, uint64_t range_ceiling, uint64_t tap_counts) {
   uint64_t bufCount = 0ul;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
     if (TUPLES_AVAILABLE[i] == 1) {
-      if (TUPLES[i].key > range_floor && TUPLES[i].key < range_ceiling || TUPLES[i].key == range_floor) {
+      if (TUPLES[i].key >= range_floor && TUPLES[i].key <= range_ceiling ) {
         memcpy(sendBuf+bufCount, &TUPLES[i], sizeof(tuple));
         bufCount++;
         TUPLES_AVAILABLE[i] = 0;
@@ -160,7 +160,6 @@ void tap(uint64_t range_floor, uint64_t range_ceiling, uint64_t tap_counts) {
     printf("Worker %d has found %lu tuples in this range actually!\n", WORLD_RANK - 1, bufCount);
   }
   MPI_Isend(&bufCount, 1,MPI_UINT64_T, 0, 77,MPI_COMM_WORLD, &count_request);
-  //MPI_Send(&bufCount, 1,MPI_UINT64_T, 0, 77,MPI_COMM_WORLD);
   MPI_Wait(&count_request,MPI_STATUS_IGNORE);
   if (bufCount != 0) {
     MPI_Isend(sendBuf, bufCount * sizeof(tuple),MPI_CHAR, 0, 77,MPI_COMM_WORLD, &tuple_request);
@@ -372,15 +371,21 @@ void worker() {
     printf("TUPLE_TOTAL_COUNT is 0x%lx\n", TUPLE_TOTAL_COUNT);
   }
   while (ORDERED_TUPLES != TUPLE_TOTAL_COUNT) {
-    if (TUPLE_TOTAL_COUNT-ORDERED_TUPLES<WINDOW_SIZE_FLOOR) {
-      ORDERED_TUPLES=TUPLE_TOTAL_COUNT;
-      if (OUTPUT_SWITCH == 1&&WORLD_RANK==1)
-      tap(MIN_KEY,MAX_KEY,TUPLE_TOTAL_COUNT-ORDERED_TUPLES);
+    uint64_t UNORDERED_TUPLES=TUPLE_TOTAL_COUNT-ORDERED_TUPLES;
+    if (UNORDERED_TUPLES < WINDOW_SIZE_FLOOR) {
+      if (OUTPUT_SWITCH==1&& WORLD_RANK==1) {
+        fflush(stdout);
+        printf("Last Batch %lu!\n",UNORDERED_TUPLES);
+      }
+      tap(MIN_KEY, MAX_KEY, UNORDERED_TUPLES);
+      ORDERED_TUPLES = TUPLE_TOTAL_COUNT;
       break;
     }
     if (OUTPUT_SWITCH == 1 && WORLD_RANK == 1) {
       printf("\n\nP is %lu\n", p);
+      printf("UNORDERED_TUPLES is 0x%lx\n", UNORDERED_TUPLES);
       printf("ORDERED_TUPLES is 0x%lx\n", ORDERED_TUPLES);
+      printf("WINDOW_SIZE_FLOOR is 0x%lx\n", WINDOW_SIZE_FLOOR);
     }
     total_keys_size = p * WORKER_SIZE;
     single_counts_size = total_keys_size + 1ul;
@@ -529,6 +534,13 @@ void worker() {
         break;
       } else if (sum > WINDOW_SIZE_FLOOR) {
         ORDERED_TUPLES += sum;
+        if (i==total_keys_size) {
+          printf("FUCKKKKK\n");
+          tap(MIN_KEY,MAX_KEY,sum);
+          init_flag=1;
+          sum = 0ul;
+          break;
+        }
         tap(MIN_KEY, total_keys[i], sum);
         MIN_KEY = total_keys[i];
         init_flag = 1;
@@ -539,8 +551,10 @@ void worker() {
     //printf("WORKER %d,%luHere8! \n", WORLD_RANK - 1, p);
   }
   //Free Memory
-  printf("BYE from Worker %d",WORLD_RANK-1);
-  free(single_keys);
+  if (OUTPUT_SWITCH == 1) {
+    printf("BYE from Worker %d", WORLD_RANK - 1);
+  }
+  //free(single_keys);
   free(total_keys);
   free(single_counts);
   free(total_counts);
