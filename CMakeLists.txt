@@ -11,9 +11,11 @@ add_executable(Newsort
         TupleGen.c
         Check.c
         Refresh.c
-        DivideComms.cpp)
+        DivideComms.cpp
+        SmallCheck.c)
 
 
 include_directories("/opt/homebrew/Cellar/open-mpi/5.0.7/include")
 include_directories("/usr/local/include/")
 include_directories("C:\\Program Files (x86)\\Microsoft SDKs\\MPI\\Include")
+add_executable(smallcheck SmallCheck.c)
