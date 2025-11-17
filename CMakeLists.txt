@@ -1,20 +1,21 @@
 cmake_minimum_required(VERSION 3.30)
-project(Newsort C)
+set(CMAKE_C_COMPILER /usr/local/bin/mpicc)
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
-set(CMAKE_C_STANDARD 11)
+project(RabbitSort C)
 
-add_executable(Newsort
-        RabbitSort.c
-        CloudRamSort.c
-        BSort.c
-        FastRamSort.c
-        TupleGen.c
-        Check.c
-        Refresh.c
-        SmallCheck.c)
+
+find_package(MPI REQUIRED)
+if (MPI_FOUND)
+    message("Found MPI")
+else (MPI_FOUND)
+    message("Not Found MPI")
+endif (MPI_FOUND)
 
 
 include_directories("/opt/homebrew/Cellar/open-mpi/5.0.7/include")
 include_directories("/usr/local/include/")
-include_directories("C:\\Program Files (x86)\\Microsoft SDKs\\MPI\\Include")
-add_executable(smallcheck SmallCheck.c)
+
+add_executable(Rabbit Refresh.c)
+add_executable(smallCheck SmallCheck.c)
