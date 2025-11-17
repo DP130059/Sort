@@ -11,7 +11,6 @@ add_executable(Newsort
         TupleGen.c
         Check.c
         Refresh.c
-        DivideComms.cpp
         SmallCheck.c)
 
 
