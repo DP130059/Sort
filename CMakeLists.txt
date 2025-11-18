@@ -12,3 +12,9 @@ add_executable(tupleGen TupleGen.c)
 #Check Sorting Results
 add_executable(check SmallCheck.c)
 target_link_libraries(check PRIVATE cjson)
+
+#Rabbit Sort
+find_package(MPI REQUIRED)
+add_executable(rabbitSort Refresh.c)
+target_link_libraries(rabbitSort PRIVATE cjson)
+target_link_libraries(rabbitSort PRIVATE MPI::MPI_C)
