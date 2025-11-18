@@ -1,21 +1,14 @@
 cmake_minimum_required(VERSION 3.30)
-set(CMAKE_C_COMPILER /usr/local/bin/mpicc)
 set(CMAKE_C_STANDARD 17)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
 project(RabbitSort C)
+set(CJSON_LIB /usr/local/lib)
+find_library(cjson libcjson.so libcjson.dylib ${CJSON_LIB}/ REQUIRED)
 
 
-find_package(MPI REQUIRED)
-if (MPI_FOUND)
-    message("Found MPI")
-else (MPI_FOUND)
-    message("Not Found MPI")
-endif (MPI_FOUND)
+#Genearate Tuples
+add_executable(tupleGen TupleGen.c)
 
-
-include_directories("/opt/homebrew/Cellar/open-mpi/5.0.7/include")
-include_directories("/usr/local/include/")
-
-add_executable(Rabbit Refresh.c)
-add_executable(smallCheck SmallCheck.c)
+#Check Sorting Results
+add_executable(check SmallCheck.c)
+target_link_libraries(check PRIVATE cjson)
