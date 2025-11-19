@@ -243,6 +243,9 @@ unsigned long find_range(unsigned long *sorted_keys, unsigned long key_count, un
 
 void master() {
   uint64_t recv_count = 0ul, batch = 0ul, sum_counts = 0ul;
+  double time[4096];
+  struct timeval start_time, end_time;
+  gettimeofday(&start_time, NULL);
   delete_files_in_dir(outputFileAddr);
   uint64_t tuple_counts[WORKER_SIZE];
   tuple *recvBuf = NULL;
@@ -257,6 +260,11 @@ void master() {
       MPI_Irecv(&tuple_counts[i - 1], 1,MPI_UINT64_T, i, 77,MPI_COMM_WORLD, &count_requests[i - 1]);
     }
     MPI_Waitall(WORKER_SIZE, count_requests,MPI_STATUS_IGNORE);
+    gettimeofday(&end_time, NULL);
+    double timeUsed = 1000000 * (end_time.tv_sec - start_time.tv_sec) + end_time.tv_usec - start_time.tv_usec;
+    gettimeofday(&start_time,NULL);
+    timeUsed = timeUsed / 1000000;
+    time[batch] = timeUsed;
     for (int i = 0; i < WORKER_SIZE; i++) {
       if (OUTPUT_SWITCH == 1) {
         printf("Master will receive %lu tuples from Worker %d\n", tuple_counts[i], i + 1);
@@ -303,7 +311,18 @@ void master() {
     recv_count += sum_counts;
     sum_counts = 0ul;
   }
-  printf("Hello from Master !8");
+  gettimeofday(&end_time, NULL);
+  double timeUsed = 1000000 * (end_time.tv_sec - start_time.tv_sec) + end_time.tv_usec - start_time.tv_usec;
+  timeUsed = timeUsed / 1000000;
+  time[batch] = timeUsed;
+  double sum_time=0;
+  for (uint64_t i=0ul;i<=batch;i++) {
+    sum_time += time[i];
+  }
+  double avg_time = sum_time / batch;
+  fflush(stdout);
+  printf("First Batch Using Time %.2lfs!\n",time[0]);
+  printf("Average Batch Using Time %.2lfs!\n",avg_time);
   free(recvBuf);
   recvBuf = NULL;
 }
