@@ -149,7 +149,7 @@ void tap(uint64_t range_floor, uint64_t range_ceiling, uint64_t tap_counts) {
   uint64_t bufCount = 0ul;
   for (uint64_t i = 0; i < TUPLE_SINGLE_COUNT; i++) {
     if (TUPLES_AVAILABLE[i] == 1) {
-      if (TUPLES[i].key >= range_floor && TUPLES[i].key <= range_ceiling ) {
+      if (TUPLES[i].key >= range_floor && TUPLES[i].key <= range_ceiling) {
         memcpy(sendBuf+bufCount, &TUPLES[i], sizeof(tuple));
         bufCount++;
         TUPLES_AVAILABLE[i] = 0;
@@ -188,8 +188,10 @@ void parseConfig() {
   lineBuffer = NULL;
   cJSON *jp_min = cJSON_GetObjectItem(configJson, "p_min");
   P_MIN = (uint64_t) jp_min->valueint;
+  P_MIN = 1ul << P_MIN;
   cJSON *jp_max = cJSON_GetObjectItem(configJson, "p_max");
   P_MAX = (uint64_t) jp_max->valueint;
+  P_MAX = 1ul << P_MAX;
   cJSON *jia = cJSON_GetObjectItem(configJson, "inputFileAddr");
   strcpy(inputFileAddr, jia->valuestring);
   cJSON *joa = cJSON_GetObjectItem(configJson, "outputFileAddr");
@@ -211,6 +213,7 @@ void parseConfig() {
 void init() {
   parseConfig();
   double tmp_window = (double) (WINDOW_SIZE);
+
   WINDOW_SIZE_CEILING = roundForU64(tmp_window * (1.0f + EPSILON));
   WINDOW_SIZE_FLOOR = roundForU64(tmp_window * (1.0f - EPSILON));
   MPI_Comm_rank(MPI_COMM_WORLD, &WORLD_RANK);
@@ -315,14 +318,14 @@ void master() {
   double timeUsed = 1000000 * (end_time.tv_sec - start_time.tv_sec) + end_time.tv_usec - start_time.tv_usec;
   timeUsed = timeUsed / 1000000;
   time[batch] = timeUsed;
-  double sum_time=0;
-  for (uint64_t i=0ul;i<=batch;i++) {
+  double sum_time = 0;
+  for (uint64_t i = 0ul; i <= batch; i++) {
     sum_time += time[i];
   }
   double avg_time = sum_time / batch;
   fflush(stdout);
-  printf("First Batch Using Time %.2lfs!\n",time[0]);
-  printf("Average Batch Using Time %.2lfs!\n",avg_time);
+  printf("First Batch Using Time %.2lfs!\n", time[0]);
+  printf("Average Batch Using Time %.2lfs!\n", avg_time);
   free(recvBuf);
   recvBuf = NULL;
 }
@@ -390,11 +393,11 @@ void worker() {
     printf("TUPLE_TOTAL_COUNT is 0x%lx\n", TUPLE_TOTAL_COUNT);
   }
   while (ORDERED_TUPLES != TUPLE_TOTAL_COUNT) {
-    uint64_t UNORDERED_TUPLES=TUPLE_TOTAL_COUNT-ORDERED_TUPLES;
+    uint64_t UNORDERED_TUPLES = TUPLE_TOTAL_COUNT - ORDERED_TUPLES;
     if (UNORDERED_TUPLES < WINDOW_SIZE_FLOOR) {
-      if (OUTPUT_SWITCH==1&& WORLD_RANK==1) {
+      if (OUTPUT_SWITCH == 1 && WORLD_RANK == 1) {
         fflush(stdout);
-        printf("Last Batch %lu!\n",UNORDERED_TUPLES);
+        printf("Last Batch %lu!\n", UNORDERED_TUPLES);
       }
       tap(MIN_KEY, MAX_KEY, UNORDERED_TUPLES);
       ORDERED_TUPLES = TUPLE_TOTAL_COUNT;
@@ -553,10 +556,10 @@ void worker() {
         break;
       } else if (sum > WINDOW_SIZE_FLOOR) {
         ORDERED_TUPLES += sum;
-        if (i==total_keys_size) {
+        if (i == total_keys_size) {
           printf("FUCKKKKK\n");
-          tap(MIN_KEY,MAX_KEY,sum);
-          init_flag=1;
+          tap(MIN_KEY, MAX_KEY, sum);
+          init_flag = 1;
           sum = 0ul;
           break;
         }
